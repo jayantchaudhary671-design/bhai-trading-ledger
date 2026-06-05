@@ -6,7 +6,7 @@ import sqlite3
 import hashlib
 
 # App Settings
-st.set_page_config(page_title="Bhai Ka Multi-User Terminal", layout="wide")
+st.set_page_config(page_title="Bhai Ka Fully Automated Cloud Terminal", layout="wide")
 
 # --- DATABASE SETUP (SQLITE) FOR MULTI-USERS ---
 DB_FILE = "users_trading_ledger.db"
@@ -14,15 +14,14 @@ DB_FILE = "users_trading_ledger.db"
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    # Users Credentials Table
-    c.execute('''CREATE TABLE IF NOT EXISTS users 
-                 (username TEXT PRIMARY KEY, password TEXT)''')
-    # Trades Ledger Table linked with Username
+    c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS trades 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, status TEXT, 
                   stock TEXT, entry_date TEXT, entry_price REAL, ema_sl REAL, 
                   qty INTEGER, investment REAL, exit_date TEXT, exit_price REAL, 
                   pnl_per_share REAL, total_pnl REAL, duration INTEGER)''')
+    # New table to remember user session info
+    c.execute('''CREATE TABLE IF NOT EXISTS active_sessions (session_key TEXT PRIMARY KEY, username TEXT)''')
     conn.commit()
     conn.close()
 
@@ -49,12 +48,64 @@ def check_login(username, password):
     conn.close()
     return result
 
+# Session management functions for "Remember Me"
+def save_session(username):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    session_key = hash_password(username + "_secret_salt")
+    c.execute("INSERT OR REPLACE INTO active_sessions (session_key, username) VALUES (?, ?)", (session_key, username))
+    conn.commit()
+    conn.close()
+    return session_key
+
+def check_active_session(session_key):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT username FROM active_sessions WHERE session_key=?", (session_key,))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else None
+
+def delete_session(session_key):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM active_sessions WHERE session_key=?", (session_key,))
+    conn.commit()
+    conn.close()
+
+# --- AUTOMATIC DATA & 20 EMA FETCH ENGINE ---
+def fetch_stock_analytics(stock_symbol):
+    try:
+        ticker_symbol = f"{stock_symbol.strip().upper()}.NS"
+        ticker = yf.Ticker(ticker_symbol)
+        
+        # 20 EMA (Weekly) ke liye kam se kam 1-2 saal ka historical data chahiye
+        hist = ticker.history(period="2y", interval="1wk")
+        if hist.empty or len(hist) < 20:
+            # Back up for BSE
+            ticker_symbol = f"{stock_symbol.strip().upper()}.BO"
+            ticker = yf.Ticker(ticker_symbol)
+            hist = ticker.history(period="2y", interval="1wk")
+            
+        if not hist.empty and len(hist) >= 20:
+            current_price = round(hist['Close'].iloc[-1], 2)
+            # Mathematical 20 Exponential Moving Average Calculation
+            ema_series = hist['Close'].ewm(span=20, adjust=False).mean()
+            current_20_ema = round(ema_series.iloc[-1], 2)
+            return current_price, current_20_ema
+        return None, None
+    except Exception as e:
+        return None, None
+
+def get_live_price(stock_symbol):
+    p, _ = fetch_stock_analytics(stock_symbol)
+    return p
+
 def load_user_trades(username):
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("SELECT * FROM trades WHERE username=?", conn, params=(username,))
     conn.close()
     if not df.empty:
-        # Format mapping to match old ledger style
         df = df.rename(columns={"id": "Trade ID", "status": "Status", "stock": "Stock", 
                                "entry_date": "Entry Date", "entry_price": "Entry Price", 
                                "ema_sl": "SL (20 EMA)", "qty": "Qty", "investment": "Investment Amt",
@@ -91,13 +142,19 @@ def clear_user_ledger(username):
     conn.commit()
     conn.close()
 
-# Initialize Database on boot
 init_db()
 
-# --- LOGIN / SIGNUP SCREEN INTERFACE ---
+# --- COOKIE-BASED AUTO LOGIN CONTROL PANEL ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.current_user = ""
+
+# Auto check if local storage parameters exist to remember login info
+if not st.session_state.logged_in and "user_session_token" in st.query_params:
+    saved_user = check_active_session(st.query_params["user_session_token"])
+    if saved_user:
+        st.session_state.logged_in = True
+        st.session_state.current_user = saved_user
 
 if not st.session_state.logged_in:
     st.title("🔒 Terminal Login / Signup Portal")
@@ -105,12 +162,16 @@ if not st.session_state.logged_in:
     
     user_input = st.text_input("Enter Username / Mail ID").strip()
     pass_input = st.text_input("Enter Password", type="password")
+    remember_me = st.checkbox("🔄 Remember My Info (Stay Logged In)")
     
     if auth_mode == "Login Existing Account":
         if st.button("🔐 Login"):
             if check_login(user_input, pass_input):
                 st.session_state.logged_in = True
                 st.session_state.current_user = user_input
+                if remember_me:
+                    token = save_session(user_input)
+                    st.query_params["user_session_token"] = token
                 st.success(f"Welcome back {user_input}!")
                 st.rerun()
             else:
@@ -124,25 +185,25 @@ if not st.session_state.logged_in:
                     st.error("Bhai, yeh Username/Mail pehle se registered hai!")
             else:
                 st.error("Dono fields bharna zaroori hai!")
-    st.stop() # Stops application flow here until user logs in
+    st.stop()
 
-# --- ACTUAL APP STARTS AFTER SUCCESSFUL LOGIN ---
+# --- ACTUAL APPLICATION DASHBOARD ---
 current_user = st.session_state.current_user
 
-# Sidebar configuration with Logout Option
 st.sidebar.header(f"👤 User: {current_user}")
 if st.sidebar.button("🚪 Logout Account"):
+    if "user_session_token" in st.query_params:
+        delete_session(st.query_params["user_session_token"])
+        del st.query_params["user_session_token"]
     st.session_state.logged_in = False
     st.session_state.current_user = ""
     st.rerun()
 
 st.title("🦅 Full-Scale Nifty 500 Multi-User Automated Trading Ledger")
-st.write(f"Strict ₹10,000 Risk Engine linked dynamically to user session.")
+st.write("Strict ₹10,000 Risk Engine with Complete Auto-Fetching Features")
 
-# Load specific user data from SQLite Database
 user_ledger = load_user_trades(current_user)
 
-# --- MASTER DATABASE: ALL NIFTY 500 STOCKS ---
 @st.cache_data
 def get_nifty_500_database():
     stocks = [
@@ -173,7 +234,7 @@ def get_nifty_500_database():
         "HUDCO", "ICICIBANK", "ICICIGI", "ICICIPRULI", "ISEC", "IDBI", "IDFCFIRSTB", "IDFC",
         "IIFL", "IRB", "IRCON", "IRCTC", "IRFC", "IRIS", "ITI", "INDIACEM", "INDIAMART",
         "INDIANB", "IEX", "IOC", "IOB", "INDIGO", "INDUSINDBK", "INDUSTOWER",
-        "INFIBEAM", "INFY", "INGERRAND", "INOXWIND", "INTELLECT", "INDHOTEL", "IPCALAB",
+        "INFIBEAM", "INFY", "INGERRAND", "INOXWIND", "INTELLECT", "INDHOTEL", "IOC", "IPCALAB",
         "JBCHEPHARM", "JKCEMENT", "JKLAC", "JKPAPER", "JMFINANCIL", "JSWENERGY", "JSWINFRA", "JSWSTEEL",
         "JAIBALAJI", "JAMNAAUTO", "J&KBANK", "JINDALSAW", "JINDALPOLY", "JAL", "JINDALSTEL", "JIOFIN",
         "JUBLFOOD", "JUBLINGREA", "JUBLPHARMA", "JUSTDIAL", "JYOTHYLAB", "KIMS", "KEI", "KNRCON",
@@ -218,30 +279,11 @@ def get_nifty_500_database():
 nifty_500_list = get_nifty_500_database()
 fix_risk_amount = 10000.0
 
-# --- FUNCTION: AUTOMATIC LIVE PRICE FETCH ---
-def get_live_price(stock_symbol):
-    try:
-        ticker_symbol = f"{stock_symbol.strip().upper()}.NS"
-        ticker = yf.Ticker(ticker_symbol)
-        todays_data = ticker.history(period='1d')
-        if not todays_data.empty:
-            return round(todays_data['Close'].iloc[-1], 2)
-        else:
-            ticker_symbol_bse = f"{stock_symbol.strip().upper()}.BO"
-            ticker_bse = yf.Ticker(ticker_symbol_bse)
-            todays_data_bse = ticker_bse.history(period='1d')
-            if not todays_data_bse.empty:
-                return round(todays_data_bse['Close'].iloc[-1], 2)
-            return None
-    except Exception as e:
-        return None
-
-# --- SIDEBAR: ACCOUNT SUMMARY METRICS ---
 st.sidebar.header("💰 Balance Metrics")
 initial_capital = st.sidebar.number_input("Total Capital (₹)", min_value=100000, value=1000000, step=50000)
 
 if st.sidebar.button("🔄 Refresh Automatic Daily Prices"):
-    st.toast("Internet se live data sync ho rha hai...")
+    st.toast("Internet se live closing prices fetch ho rahi hain...")
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     for trade in user_ledger:
@@ -250,8 +292,8 @@ if st.sidebar.button("🔄 Refresh Automatic Daily Prices"):
             if fetched_price:
                 pnl_sh = fetched_price - trade["Entry Price"]
                 tot_pnl = pnl_sh * trade["Qty"]
-                c.execute('''UPDATE trades SET exit_price=?, pnl_per_share=?, total_pnl=? 
-                             WHERE id=?''', (fetched_price, pnl_sh, tot_pnl, trade["Trade ID"]))
+                c.execute('''UPDATE trades SET exit_price=?, pnl_per_share=?, total_pnl=? WHERE id=?''', 
+                          (fetched_price, pnl_sh, tot_pnl, trade["Trade ID"]))
     conn.commit()
     conn.close()
     st.rerun()
@@ -274,25 +316,36 @@ st.sidebar.metric(label="Current Account Value (Live)", value=f"₹{current_bala
 st.sidebar.metric(label="Total Invested Capital", value=f"₹{total_investment:,.2f}")
 st.sidebar.metric(label="Total Booked Profit/Loss", value=f"₹{closed_pnl:,.2f}")
 
-# --- SECTION 1: LOG NEW ENTRY ---
+# --- SECTION 1: FULLY AUTOMATED NEW ENTRY PANELS ---
 st.header("🔍 1. Log New Trade Entry")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     selected_stock = st.selectbox("Select Stock (Nifty 500 Database)", options=nifty_500_list, index=nifty_500_list.index("SRF"))
-    allow_custom = st.checkbox("🔍 Manual entry (Penny/Custom Stock)")
+    allow_custom = st.checkbox(" Manual entry (Penny/Custom)")
     stock_name = st.text_input("Custom Ticker Name", value="").upper() if allow_custom else selected_stock
 
+# --- AUTOMATIC BACKGROUND PRE-FETCH HARVESTER ---
+with st.spinner(f"Internet se {stock_name} ki live market details nikal rahe hain..."):
+    auto_entry_price, auto_20_ema = fetch_stock_analytics(stock_name)
+
 with col2:
-    entry_price = st.number_input("Entry Price (₹)", min_value=1.0, value=2700.0)
+    # Internet se fetched closing price direct placeholder default value ban gayi hai!
+    final_entry_price = st.number_input("Entry Price (Auto-Fetched - ₹)", min_value=0.0, 
+                                        value=auto_entry_price if auto_entry_price else 100.0, step=0.05)
 with col3:
-    ema_20_sl = st.number_input("SL Level (20 EMA - ₹)", min_value=1.0, value=2650.0)
+    # 20 EMA ka background calculated value direct default ban gaya!
+    final_ema_sl = st.number_input("SL Level (20 EMA Auto-Fetched - ₹)", min_value=0.0, 
+                                   value=auto_20_ema if auto_20_ema else 95.0, step=0.05)
 with col4:
     entry_date = st.date_input("Entry Date", datetime.now())
 
-per_share_risk = entry_price - ema_20_sl
+if not auto_entry_price or not auto_20_ema:
+    st.warning("⚠️ Warning: Data load nahi ho paya. Please check manual connectivity ya internet connection.")
+
+per_share_risk = final_entry_price - final_ema_sl
 qty = int(fix_risk_amount / per_share_risk) if per_share_risk > 0 else 0
-investment_amt = qty * entry_price
+investment_amt = qty * final_entry_price
 
 c1, c2, c3 = st.columns(3)
 c1.metric("Calculated Quantity", f"{qty} Shares")
@@ -305,23 +358,18 @@ if st.button("🚀 Execute Trade (Add to Ledger)"):
     elif per_share_risk <= 0:
         st.error("Bhai, Entry Price 20 EMA SL se upar honi chahiye!")
     elif investment_amt > current_balance:
-        st.error("Bhai, account mein itna capital nahi hai!")
+        st.error("Bhai, account mein itna capital nahi bacha hai!")
     else:
-        with st.spinner("Internet se validation ho raha hai..."):
-            live_price_now = get_live_price(stock_name)
-        live_price_now = live_price_now if live_price_now else entry_price
-        
         new_trade = {
             "Status": "ACTIVE", "Stock": stock_name, "Entry Date": entry_date.strftime('%Y-%m-%d'),
-            "Entry Price": entry_price, "SL (20 EMA)": ema_20_sl, "Qty": qty, "Investment Amt": investment_amt,
-            "Exit Date": "-", "Exit Price": live_price_now, "P&L Per Share": live_price_now - entry_price,
-            "Total P&L": (live_price_now - entry_price) * qty, "Duration (Days)": 0
+            "Entry Price": final_entry_price, "SL (20 EMA)": final_ema_sl, "Qty": qty, "Investment Amt": investment_amt,
+            "Exit Date": "-", "Exit Price": final_entry_price, "P&L Per Share": 0.0, "Total P&L": 0.0, "Duration (Days)": 0
         }
         save_new_trade(current_user, new_trade)
-        st.success(f"🔥 Trade logged successfully under session user '{current_user}'!")
+        st.success(f"🔥 {stock_name} executed successfully and tracked permanently!")
         st.rerun()
 
-# --- SECTION 2: AUTO PRICE MONITOR & EXIT PANEL ---
+# --- SECTION 2: ACTIVE TRADES TRACKING ---
 active_trades = [t for t in user_ledger if t["Status"] == "ACTIVE"]
 if active_trades:
     st.markdown("---")
@@ -362,4 +410,6 @@ if user_ledger:
         clear_user_ledger(current_user)
         st.rerun()
 else:
-    st.info("Abhi aapka personal ledger khali hai. Koi trade add kijiye!")
+    st.info("Abhi aapka personal ledger khali hai. Nifty 500 se koi stock choose karke real-time automation check karein!")
+    
+                
