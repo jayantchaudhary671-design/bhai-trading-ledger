@@ -7,7 +7,7 @@ import hashlib
 import concurrent.futures
 
 # App Settings
-st.set_page_config(page_title="Bhai Ka Custom Screener Terminal", layout="wide")
+st.set_page_config(page_title="Bhai Ka Pro Chartink Scanner", layout="wide")
 
 # --- DATABASE SETUP (SQLITE) FOR MULTI-USERS ---
 DB_FILE = "users_trading_ledger.db"
@@ -72,62 +72,75 @@ def delete_session(session_key):
     conn.commit()
     conn.close()
 
-# --- SPEED OPTIMIZED DATA FILTER ENGINE ---
-def fetch_stock_analytics(stock_symbol):
+# --- 100% ADVANCED HISTORICAL DATA ENGINE FOR BULK SCREENING ---
+def fetch_full_screener_analytics(stock_symbol, n_weeks):
     try:
         symbol = stock_symbol.strip().upper()
         ticker_symbol = f"{symbol}.NS"
         ticker = yf.Ticker(ticker_symbol)
         
-        hist = ticker.history(period="1y", interval="1wk")
-        if hist.empty or len(hist) < 20:
+        # 2 saal ka weekly data load kar rhe hain taaki N weeks ago ka calculations breakdown ho sake
+        hist = ticker.history(period="2y", interval="1wk")
+        if hist.empty or len(hist) < (20 + n_weeks):
             ticker_symbol = f"{symbol}.BO"
             ticker = yf.Ticker(ticker_symbol)
-            hist = ticker.history(period="1y", interval="1wk")
+            hist = ticker.history(period="2y", interval="1wk")
             
         if not hist.empty and len(hist) >= 20:
             hist = hist.dropna(subset=['Close'])
             hist = hist[hist['Close'] > 0]
             
+            # 1. Current Closing Price aur Market Cap Metrics Harvestation
             current_price = round(hist['Close'].iloc[-1], 2)
             
-            # 20 EMA
+            # Market Cap billions/crores filter setup
+            mcap = ticker.info.get('marketCap', 0)
+            mcap_crores = round(mcap / 10000000, 2) if mcap else 0.0
+            
+            # 2. 20 EMA (Current)
             ema_series = hist['Close'].ewm(span=20, adjust=False).mean()
             current_20_ema = round(ema_series.iloc[-1], 2)
             
-            # 14 RSI
+            # 3. Weekly RSI Series Generator (14 Period)
             delta = hist['Close'].diff()
             gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
             loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
             rs = gain / loss
             rsi_series = 100 - (100 / (1 + rs))
+            
             current_rsi = round(rsi_series.iloc[-1], 2)
             
-            return current_price, current_20_ema, current_rsi
-        return None, None, None
+            # 4. N Weeks Ago Historical RSI Harvester
+            historical_rsi = None
+            if len(rsi_series) > (n_weeks + 1):
+                historical_rsi = round(rsi_series.iloc[-(n_weeks + 1)], 2)
+                
+            return current_price, current_20_ema, current_rsi, mcap_crores, historical_rsi
+        return None, None, None, 0.0, None
     except Exception:
-        return None, None, None
+        return None, None, None, 0.0, None
 
-def run_bulk_screener(stock_list):
+def run_pro_bulk_screener(stock_list, n_weeks):
     results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
-        future_to_stock = {executor.submit(fetch_stock_analytics, stock): stock for stock in stock_list}
+    # Multithreading execution engine for ultra-fast processing
+    with concurrent.futures.ThreadPoolExecutor(max_workers=25) as executor:
+        future_to_stock = {executor.submit(fetch_full_screener_analytics, stock, n_weeks): stock for stock in stock_list}
         for future in concurrent.futures.as_completed(future_to_stock):
             stock = future_to_stock[future]
             try:
-                price, ema, rsi = future.result()
+                price, ema, rsi, mcap, hist_rsi = future.result()
                 if price and rsi:
-                    action = "✅ APPROVED" if rsi >= 60.0 else "❌ LOCKED"
                     results.append({
                         "Stock": stock,
                         "Current Price (₹)": price,
                         "Weekly 20 EMA (₹)": ema,
-                        "Weekly RSI (14)": rsi,
-                        "Strategy Action": action
+                        "Current Weekly RSI": rsi,
+                        "Market Cap (Cr)": mcap,
+                        f"{n_weeks} Wks Ago RSI": hist_rsi
                     })
             except Exception:
                 pass
-    return sorted(results, key=lambda x: x["Weekly RSI (14)"], reverse=True)
+    return results
 
 def load_user_trades(username):
     conn = sqlite3.connect(DB_FILE)
@@ -172,7 +185,7 @@ def clear_user_ledger(username):
 
 init_db()
 
-# --- USER AUTHENTICATION STATE ---
+# --- USER LOGIN STATE MANAGEMENT ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.current_user = ""
@@ -215,59 +228,16 @@ if not st.session_state.logged_in:
 
 current_user = st.session_state.current_user
 
-# --- SIDEBAR ACCOUNT STATS CONFIGURATION ---
+# --- SIDEBAR COMPREHENSIVE CONFIGURATION PANEL ---
 st.sidebar.header(f"👤 User: {current_user}")
 initial_capital = st.sidebar.number_input("Total Capital (₹)", min_value=100000, value=1000000, step=50000)
 
-# 🛠️ FIXED: Risk Engine dynamically scaled to 1% of the inputted capital!
+# True 1% Position Risk Sizing variable linker
 calculated_risk_per_trade = float(initial_capital) * 0.01
 st.sidebar.metric(label="Dynamic Risk Per Trade (1% of Capital)", value=f"₹{calculated_risk_per_trade:,.2f}")
 
 user_ledger = load_user_trades(current_user)
 
-if st.sidebar.button("🔄 Refresh Active Trades Prices"):
-    st.toast("Internet se live data sync ho raha hai...")
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    for trade in user_ledger:
-        if trade["Status"] == "ACTIVE":
-            fetched_price = get_live_price(trade["Stock"])
-            if fetched_price:
-                pnl_sh = fetched_price - trade["Entry Price"]
-                tot_pnl = pnl_sh * trade["Qty"]
-                c.execute('''UPDATE trades SET exit_price=?, pnl_per_share=?, total_pnl=? WHERE id=?''', 
-                          (fetched_price, pnl_sh, tot_pnl, trade["Trade ID"]))
-    conn.commit()
-    conn.close()
-    st.rerun()
-
-total_investment = 0
-active_pnl = 0
-closed_pnl = 0
-
-for trade in user_ledger:
-    if trade["Status"] == "ACTIVE":
-        total_investment += trade["Investment Amt"]
-        active_pnl += trade["Total P&L"]
-    else:
-        closed_pnl += trade["Total P&L"]
-
-current_balance = initial_capital + active_pnl + closed_pnl
-
-st.sidebar.markdown("---")
-st.sidebar.metric(label="Current Account Value (Live)", value=f"₹{current_balance:,.2f}")
-st.sidebar.metric(label="Total Invested Capital", value=f"₹{total_investment:,.2f}")
-st.sidebar.metric(label="Total Booked Profit/Loss", value=f"₹{closed_pnl:,.2f}")
-
-if st.sidebar.button("🚪 Logout Account"):
-    if "user_session_token" in st.query_params:
-        delete_session(st.query_params["user_session_token"])
-        del st.query_params["user_session_token"]
-    st.session_state.logged_in = False
-    st.session_state.current_user = ""
-    st.rerun()
-
-# --- MASTER DATABASE INDEX ---
 @st.cache_data
 def get_nifty_500_database():
     stocks = [
@@ -292,7 +262,7 @@ def get_nifty_500_database():
         "FINCABLES", "FINPIPE", "FLUOROCHEM", "FORTIS", "GRINFRA", "GAIL", "GMMPFAUDLR", "GMRINFRA",
         "GOCLCORP", "GPTINFRA", "GATEWAY", "GENUSPOWER", "GLAND", "GLAXO", "GLENMARK", "GOCOLORS",
         "GODFRYPHLP", "GODREJAGRO", "GODREJCP", "GODREJIND", "GODREJPROP", "GRANULES", "GRAPHITE", "GRASIM",
-        "GESHIP", "GREENPANEL", "GRINDWELL", "GUJALKALI", "GUJGASLTD", "GMDCLTD", "GNFC", "GSFC",
+        "GESHIP", "GREENPANEL", "GRINDwell", "GUJALKALI", "GUJGASLTD", "GMDCLTD", "GNFC", "GSFC",
         "GSPL", "HEG", "HCLTECH", "HDFCBANK", "HDFCLIFE", "HFCL", "HLEGLAS", "HAL", "HEROMOTOCO",
         "HIKAL", "HINDALCO", "HINDCOPPER", "HINDPETRO", "HINDUNILVR", "HINDZINC", "HOMEFIRST", "HONAUT",
         "HUDCO", "ICICIBANK", "ICICIGI", "ICICIPRULI", "ISEC", "IDBI", "IDFCFIRSTB", "IDFC",
@@ -311,7 +281,7 @@ def get_nifty_500_database():
         "MEDIASSIST", "MEDPLUS", "METROPOLIS", "MINDACORP", "MSUMI", "MOFSL", "MOLDTECH",
         "MPHASIS", "MCX", "MUTHOOTFIN", "NATCOPHARM", "NBCC", "NCC",
         "NESCO", "NFL", "NHPC", "NLCINDIA", "NMDC", "NOCIL", "NTPC", "NH",
-        "NATIONALUM", "NAVINFLUOR", "NAZARA", "NEOGEN", "NESF", "NESTLEIND", "NETWEB", "NETWORK18",
+        "NATIONALUM", "NAVINFLUOR", "NAZARA", "NEOGEN", "NESTLEIND", "NETWEB", "NETWORK18",
         "NUCLEUS", "NUVAMA", "NUVOCO", "OBEROIRLTY", "ONGC", "OIL", "OLECTRA", "OMAXE",
         "ORCHIDPHAR", "ORIENTELEC", "PFC", "PNCINFRA", "PVRINOX", "PAGEIND", "PANAMAPET",
         "PARADEEP", "PARAS", "PATANJALI", "PATELENG", "PAYTM", "PERSISTENT", "PETRONET", "PHOENIXLTD",
@@ -342,51 +312,79 @@ def get_nifty_500_database():
 
 nifty_500_list = get_nifty_500_database()
 
-# --- 🚀 NEW ARCHITECTURE: INDEPENDENT SCREENER TABS CONTROL (CHARTINK TYPE) ---
-tab_screener, tab_execution = st.tabs(["📡 1. Live Momentum Screener (Chartink Mode)", "🔍 2. Trade Execution Ledger"])
+# --- MODULAR TWO-TAB ARCHITECTURE SYSTEM (SCREENER SEPARATED) ---
+tab_screener, tab_execution = st.tabs(["📡 1. Live Momentum Screener (Pro Chartink Mode)", "🔍 2. Trade Execution Ledger"]) [cite: 1929, 1930, 1931]
 
-# --- TAB 1: THE DEDICATED SCREENER MODULE ---
+# --- TAB 1: THE DEDICATED ADVANCED QUERY SCREENER ---
 with tab_screener:
-    st.header("🦅 Custom Real-Time Momentum Scanner")
-    st.write("Chartink layout matrix panel. Tu yahan se stocks ka automatic technical scan parameters customise bhi kar sakta hai:")
+    st.header("🦅 Custom Real-Time Multi-Query Script Scanner") [cite: 1950]
+    st.write("Apne rules ke hisab se parameters set kijiye aur Nifty 500 stocks ko instantly scan kijiye:")
     
-    # Customisable Slider Filters (Tu yahan se live filter settings badal sakta hai)
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        rsi_filter_cutoff = st.slider("Customise Min RSI Filter Level (Default: 60)", min_value=30.0, max_value=80.0, value=60.0, step=1.0)
-    with col_f2:
-        max_scan_count = st.slider("Screener Scan Batch Size (High Performance Limit)", min_value=10, max_value=100, value=30, step=5)
+    # 📑 SECTION 1: USER CUSTOM QUERY BUILDER INTERFACE
+    st.markdown("### 🛠️ 1. Configure Scanner Filters")
+    
+    c_f1, c_f2, c_f3 = st.columns(3)
+    with c_f1:
+        st.markdown("**Current Weekly RSI Filters**")
+        rsi_direction = st.selectbox("Current Weekly RSI Condition", ["More Than (>) ", "Less Than (<)"]) [cite: 1946, 1947]
+        rsi_cutoff = st.slider("Select Current RSI Cutoff Value", min_value=10.0, max_value=90.0, value=60.0, step=1.0)
         
-    scannable_batch = nifty_500_list[:max_scan_count]
+    with c_f2:
+        st.markdown("**Historical RSI Filters (N Weeks Ago)**")
+        n_weeks_ago = st.number_input("Enter 'N' (Number of Weeks Ago)", min_value=1, max_value=20, value=4, step=1) [cite: 1946, 1947]
+        hist_rsi_direction = st.selectbox("Historical RSI Condition", ["More Than (>) ", "Less Than (<)"])
+        hist_rsi_cutoff = st.slider("Select Historical RSI Cutoff Value", min_value=10.0, max_value=90.0, value=60.0, step=1.0)
+        
+    with c_f3:
+        st.markdown("**Company Fundamental Filters**")
+        mcap_direction = st.selectbox("Market Cap Filter Condition", ["Less Than (<) [Small/Midcap Focus]", "Greater Than (>) [Largecap Focus]"])
+        mcap_cutoff = st.number_input("Market Cap Threshold Value (In Crores)", min_value=100, max_value=500000, value=20000, step=1000)
+        
+    # Performance scanning slider limit
+    scan_batch_limit = st.slider("Batch Size Limit for Real-time Cloud Scanner", min_value=10, max_value=200, value=40, step=10)
+    scannable_stocks = nifty_500_list[:scan_batch_limit]
     
-    if st.button("🔥 Run Strategic System Scan"):
-        with st.spinner("Compiling technical scanner filters via Yahoo Finance..."):
-            matrix_raw = run_bulk_screener(scannable_batch)
+    if st.button("🔥 Run Advanced Multi-Filter Scan"):
+        with st.spinner("Processing Nifty 500 live candles... System analyzing Chartink queries..."):
+            raw_matrix_results = run_pro_bulk_screener(scannable_stocks, n_weeks_ago)
             
-            # Application of the dynamic customisable custom filters
-            processed_matrix = []
-            for item in matrix_raw:
-                # Custom dynamic check matching the slider input instead of hardcoded 60
-                if item["Weekly RSI (14)"] >= rsi_filter_cutoff:
-                    item["Strategy Action"] = f"✅ APPROVED (RSI >= {rsi_filter_cutoff})"
-                else:
-                    item["Strategy Action"] = f"❌ LOCKED (RSI < {rsi_filter_cutoff})"
-                processed_matrix.append(item)
+            filtered_matrix = []
+            for item in raw_matrix_results:
+                # Rule Check 1: Current RSI Filter Evaluation
+                c_rsi = item["Current Weekly RSI"]
+                pass_current_rsi = (c_rsi >= rsi_cutoff) if "More Than" in rsi_direction else (c_rsi <= rsi_cutoff)
                 
-            st.session_state.custom_matrix_df = pd.DataFrame(processed_matrix)
-            st.success("Screener Matrix Grid fully loaded successfully!")
+                # Rule Check 2: N Weeks Ago Historical RSI Evaluation
+                h_rsi = item[f"{n_weeks_ago} Wks Ago RSI"]
+                pass_hist_rsi = True
+                if h_rsi is not None:
+                    pass_hist_rsi = (h_rsi >= hist_rsi_cutoff) if "More Than" in hist_rsi_direction else (h_rsi <= hist_rsi_cutoff)
+                else:
+                    pass_hist_rsi = False # Fail if no history data points
+                    
+                # Rule Check 3: Market Capital Threshold Evaluation
+                c_mcap = item["Market Cap (Cr)"]
+                pass_mcap = (c_mcap <= mcap_cutoff) if "Less Than" in mcap_direction else (c_mcap >= mcap_cutoff)
+                
+                # Ultimate Query Verification Match
+                if pass_current_rsi and pass_hist_rsi and pass_mcap:
+                    item["Screener Verification"] = "✅ MATCH APPROVED"
+                    filtered_matrix.append(item)
+                    
+            st.session_state.pro_scanner_df = pd.DataFrame(filtered_matrix)
+            st.success(f"Scan Completed! Found {len(filtered_matrix)} stocks matching all specifications.")
             
-    if "custom_matrix_df" in st.session_state and not st.session_state.custom_matrix_df.empty:
-        # Highlighting row functions for Chartink feeling
-        def style_rows(row):
-            if "APPROVED" in str(row["Strategy Action"]):
-                return ['background-color: rgba(0, 128, 0, 0.2)'] * len(row)
-            return ['background-color: rgba(128, 0, 0, 0.1)'] * len(row)
-            
-        styled_df = st.session_state.custom_matrix_df.style.apply(style_rows, axis=1)
-        st.dataframe(styled_df, use_container_width=True)
+    st.markdown("---")
+    st.markdown("### 📋 2. Real-Time Result Grid Matrix")
+    
+    if "pro_scanner_df" in st.session_state and not st.session_state.pro_scanner_df.empty:
+        # Dynamic green rows matrix styling like professional tools
+        st.dataframe(
+            st.session_state.pro_scanner_df.style.background_gradient(subset=["Current Weekly RSI", "Market Cap (Cr)"], cmap="Greens"), 
+            use_container_width=True
+        )
     else:
-        st.info("Scanner abhi standby par hai. Upar wale button ko dabate hi live data table aa jayegi!")
+        st.info("Scanner standby par hai. Multi-query run karne ke liye 'Run Advanced Multi-Filter Scan' dabayein.")
 
 # --- TAB 2: POSITION SIZING ENGINE & TRADING JOURNAL ---
 with tab_execution:
@@ -396,16 +394,17 @@ with tab_execution:
     with col1:
         stock_name = st.selectbox("Select Stock to Buy", options=nifty_500_list, index=nifty_500_list.index("SRF"))
         
-    with st.spinner(f"Fetching live candle feeds for {stock_name}..."):
-        auto_entry_price, auto_20_ema, auto_weekly_rsi = fetch_stock_analytics(stock_name)
+    with st.spinner(f"Fetching live data points for {stock_name}..."):
+        # Dummy pass 1 to reuse fetch engine architecture
+        auto_entry_price, auto_20_ema, auto_weekly_rsi, _, _ = fetch_full_screener_analytics(stock_name, 1)
         
     is_trade_allowed = True
     if auto_weekly_rsi is not None:
         if auto_weekly_rsi >= 60.0:
-            st.success(f"✅ SYSTEM PASS! RSI: **{auto_weekly_rsi}** | Momentum ready.")
+            st.success(f"✅ STRATEGY PASS! RSI: **{auto_weekly_rsi}** | Ready to Buy.")
         else:
             is_trade_allowed = False
-            st.error(f"❌ SYSTEM BLOCK! RSI: **{auto_weekly_rsi}** | Low Momentum (RSI < 60). Trade execution locked!")
+            st.error(f"❌ STRATEGY BLOCK! RSI: **{auto_weekly_rsi}** | Low Momentum (RSI < 60). Trade execution locked!")
             
     with col2:
         final_entry_price = st.number_input("Entry Price (₹)", min_value=0.0, value=auto_entry_price if auto_entry_price else 100.0)
@@ -416,22 +415,22 @@ with tab_execution:
         
     per_share_risk = final_entry_price - final_ema_sl
     
-    # 🛠️ FIXED MATH: Calculated Quantity is now dynamically derived using the variable 1% of changing capital input!
+    # 🛠️ FIXED: Calculated Quantity is fully derived from variable risk (1% of dynamic initial capital!)
     qty = int(calculated_risk_per_trade / per_share_risk) if per_share_risk > 0 else 0
     investment_amt = qty * final_entry_price
     
     c1, c2, c3 = st.columns(3)
-    c1.metric("Dynamic Calculated Quantity", f"{qty} Shares")
-    c2.metric("Investment Amount Required", f"₹{investment_amt:,.2f}")
-    c3.metric("Committed Capital Risk (1% of Total)", f"₹{calculated_risk_per_trade:,.2f}")
+    c1.metric("Dynamic Calculated Quantity", f"{qty} Shares") [cite: 1964]
+    c2.metric("Investment Amount Required", f"₹{investment_amt:,.2f}") [cite: 1964]
+    c3.metric("Committed Capital Risk (1% of Total)", f"₹{calculated_risk_per_trade:,.2f}") [cite: 1964]
     
     if st.button("🚀 Execute Trade (Add to Ledger)", disabled=not is_trade_allowed):
         if not is_trade_allowed:
-            st.error("Trade entry is locked under risk guidelines.")
+            st.error("Trade entry is strictly locked under risk parameters guidelines.")
         elif per_share_risk <= 0:
             st.error("Bhai, Entry Price 20 EMA SL se upar honi chahiye!")
         elif investment_amt > current_balance:
-            st.error("Bhai, account balance limits cross ho rahi hain!")
+            st.error("Bhai, account balance limits se bahar investment ho rahi hai!")
         else:
             new_trade = {
                 "Status": "ACTIVE", "Stock": stock_name, "Entry Date": entry_date.strftime('%Y-%m-%d'),
@@ -439,10 +438,10 @@ with tab_execution:
                 "Exit Date": "-", "Exit Price": final_entry_price, "P&L Per Share": 0.0, "Total P&L": 0.0, "Duration (Days)": 0
             }
             save_new_trade(current_user, new_trade)
-            st.success(f"🔥 {stock_name} trade logged in database successfully under dynamic compounding metrics!")
+            st.success(f"🔥 {stock_name} trade logged in database successfully under compounding metrics!")
             st.rerun()
-            
-    # --- ACTIVE TRADES ACTIVE MONITORING ---
+
+    # --- ACTIVE TRADES REFRESH LOGIC ENGINE ---
     active_trades = [t for t in user_ledger if t["Status"] == "ACTIVE"]
     if active_trades:
         st.markdown("---")
@@ -468,7 +467,7 @@ with tab_execution:
                     st.success(f"Trade Closed for {trade['Stock']}!")
                     st.rerun()
 
-    # --- HISTORICAL JOURNAL JOURNAL ---
+    # --- REAL TIME HISTORICAL LEDGER ACCOUNT JOURNAL ---
     st.markdown("---")
     st.header("📑 4. Master Trading Ledger & Journal")
     if user_ledger:
@@ -482,4 +481,4 @@ with tab_execution:
             clear_user_ledger(current_user)
             st.rerun()
     else:
-        st.info("Ledger khali hai. Data core matrix system safely active.")
+        st.info("Ledger khali hai. Data core matrix database engine active.")
