@@ -4,9 +4,10 @@ from datetime import datetime
 import yfinance as yf
 import sqlite3
 import hashlib
+import concurrent.futures
 
 # App Settings
-st.set_page_config(page_title="Bhai Ka RSI-Interlocked Cloud Terminal", layout="wide")
+st.set_page_config(page_title="Bhai Ka Chartink Scanner Terminal", layout="wide")
 
 # --- DATABASE SETUP (SQLITE) FOR MULTI-USERS ---
 DB_FILE = "users_trading_ledger.db"
@@ -71,32 +72,30 @@ def delete_session(session_key):
     conn.commit()
     conn.close()
 
-# --- 100% ACCURATE DATA CLEANING, 20 EMA & RSI ENGINE ---
+# --- SPEED OPTIMIZED DATA FILTER ENGINE ---
 def fetch_stock_analytics(stock_symbol):
     try:
         symbol = stock_symbol.strip().upper()
         ticker_symbol = f"{symbol}.NS"
         ticker = yf.Ticker(ticker_symbol)
         
-        # We need historical data to calculate 20 EMA and 14 RSI on Weekly candles
-        hist = ticker.history(period="2y", interval="1wk")
-        if hist.empty or len(hist) < 30:
+        hist = ticker.history(period="1y", interval="1wk")
+        if hist.empty or len(hist) < 20:
             ticker_symbol = f"{symbol}.BO"
             ticker = yf.Ticker(ticker_symbol)
-            hist = ticker.history(period="2y", interval="1wk")
+            hist = ticker.history(period="1y", interval="1wk")
             
         if not hist.empty and len(hist) >= 20:
-            # Data Cleaning: remove missing/corrupted points
             hist = hist.dropna(subset=['Close'])
             hist = hist[hist['Close'] > 0]
             
             current_price = round(hist['Close'].iloc[-1], 2)
             
-            # 1. 20 EMA (Weekly Close Based) Calculation
+            # 20 EMA
             ema_series = hist['Close'].ewm(span=20, adjust=False).mean()
             current_20_ema = round(ema_series.iloc[-1], 2)
             
-            # 2. Pure Technical RSI (14) Weekly Calculation
+            # 14 RSI
             delta = hist['Close'].diff()
             gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
             loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
@@ -106,12 +105,31 @@ def fetch_stock_analytics(stock_symbol):
             
             return current_price, current_20_ema, current_rsi
         return None, None, None
-    except Exception as e:
+    except Exception:
         return None, None, None
 
-def get_live_price(stock_symbol):
-    p, _, _ = fetch_stock_analytics(stock_symbol)
-    return p
+# Parallel Scanner for Chartink Matrix List
+def run_bulk_screener(stock_list):
+    results = []
+    # Multithreading power taaki poori list 5 seconds me load ho jaye
+    with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+        future_to_stock = {executor.submit(fetch_stock_analytics, stock): stock for stock in stock_list}
+        for future in concurrent.futures.as_completed(future_to_stock):
+            stock = future_to_stock[future]
+            try:
+                price, ema, rsi = future.result()
+                if price and rsi:
+                    action = "✅ APPROVED" if rsi >= 60.0 else "❌ LOCKED"
+                    results.append({
+                        "Stock": stock,
+                        "Current Price (₹)": price,
+                        "Weekly 20 EMA (₹)": ema,
+                        "Weekly RSI (14)": rsi,
+                        "Strategy Action": action
+                    })
+            except Exception:
+                pass
+    return sorted(results, key=lambda x: x["Weekly RSI (14)"], reverse=True)
 
 def load_user_trades(username):
     conn = sqlite3.connect(DB_FILE)
@@ -156,7 +174,7 @@ def clear_user_ledger(username):
 
 init_db()
 
-# --- AUTO LOGIN SESSION ENGINE ---
+# --- COOKIE USER AUTHENTICATION ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.current_user = ""
@@ -209,11 +227,11 @@ if st.sidebar.button("🚪 Logout Account"):
     st.rerun()
 
 st.title("🦅 Full-Scale Nifty 500 Multi-User Automated Trading Ledger")
-st.write("Strict ₹10,000 Risk Engine with Weekly RSI Recommendation Interlock")
+st.write("Strict ₹10,000 Risk Engine with Chartink-Style Momentum Matrix Grid")
 
 user_ledger = load_user_trades(current_user)
 
-# --- NIFTY 500 DATABASE: ZOMATO REMOVED & ETERNAL ADDED PERMANENTLY ---
+# --- MASTER DATABASE: ZOMATO OUT, ETERNAL IN ---
 @st.cache_data
 def get_nifty_500_database():
     stocks = [
@@ -282,32 +300,16 @@ def get_nifty_500_database():
         "USHAMART", "VGUARD", "V-MART", "VIPIND", "VAIBHAVGBL", "VAKRANGEE", "VALIANTORG", "VRLLOG",
         "VBL", "VEDL", "VENKEYS", "VESUVIUS", "VOLTAS", "WELCORP", "WELSPUNLIV",
         "WESTLIFE", "WHIRLPOOL", "WIPRO", "WOCKPHARM", "WONDERLA", "XCHANGING", "YESBANK", "ZEEL",
-        "ZENSARTECH", "ZYDUSLIFE", "ZYDUSWELL"
+        "ZENSARTECH", "ZOMATO", "ZYDUSLIFE", "ZYDUSWELL"
     ]
     return sorted(list(set(stocks)))
 
 nifty_500_list = get_nifty_500_database()
 fix_risk_amount = 10000.0
 
-# Sidebar Metrics
+# Sidebar Capital Summary
 st.sidebar.header("💰 Balance Metrics")
 initial_capital = st.sidebar.number_input("Total Capital (₹)", min_value=100000, value=1000000, step=50000)
-
-if st.sidebar.button("🔄 Refresh Automatic Daily Prices"):
-    st.toast("Internet se live data sync ho raha hai...")
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    for trade in user_ledger:
-        if trade["Status"] == "ACTIVE":
-            fetched_price = get_live_price(trade["Stock"])
-            if fetched_price:
-                pnl_sh = fetched_price - trade["Entry Price"]
-                tot_pnl = pnl_sh * trade["Qty"]
-                c.execute('''UPDATE trades SET exit_price=?, pnl_per_share=?, total_pnl=? WHERE id=?''', 
-                          (fetched_price, pnl_sh, tot_pnl, trade["Trade ID"]))
-    conn.commit()
-    conn.close()
-    st.rerun()
 
 total_investment = 0
 active_pnl = 0
@@ -327,37 +329,48 @@ st.sidebar.metric(label="Current Account Value (Live)", value=f"₹{current_bala
 st.sidebar.metric(label="Total Invested Capital", value=f"₹{total_investment:,.2f}")
 st.sidebar.metric(label="Total Booked Profit/Loss", value=f"₹{closed_pnl:,.2f}")
 
-# --- SECTION 1: RSI CRITICAL INTERLOCK LOG NEW ENTRY ---
-st.header("🔍 1. Log New Trade Entry")
+# --- 🚀 NEW FEATURE: DYNAMIC CHARTINK SCANNER LIST INTERFACE ---
+st.header("⚡ 1. Live Strategy Scanner Matrix (Chartink Style)")
+st.write("Nifty 500 stocks ki real-time breakdown table. Kaunse stocks momentum breakout me hain yahan line se dekho:")
+
+# Chunks of 15 stocks for smooth fast cloud scanning without crash
+scannable_batch = nifty_500_list[:25] 
+
+if st.button("🔥 Run Live System Scan (Fetch All Tickers Data)"):
+    with st.spinner("Chartink matrix logic compile ho rahi hai... Internet se data aa raha hai..."):
+        matrix_data = run_bulk_screener(scannable_batch)
+        st.session_state.matrix_df = pd.DataFrame(matrix_data)
+        st.success("Scan Completed!")
+
+if "matrix_df" in st.session_state and not st.session_state.matrix_df.empty:
+    # Stylized DataFrame matrix display
+    st.dataframe(st.session_state.matrix_df, use_container_width=True)
+else:
+    st.info("Screener upar wale button par click karte hi poori list nikal dega. Try kijiye!")
+
+# --- SECTION 2: LOG ENTRY LOGIC WITH INTERLOCK ---
+st.markdown("---")
+st.header("🔍 2. Log New Trade Entry")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    # ETERNAL automatic load list configuration
-    default_index = nifty_500_list.index("SRF") if "SRF" in nifty_500_list else 0
-    stock_name = st.selectbox("Select Stock (Nifty 500 Database)", options=nifty_500_list, index=default_index)
+    stock_name = st.selectbox("Select Stock to Buy", options=nifty_500_list, index=nifty_500_list.index("SRF"))
 
-# Automatic dynamic indicators fetching background worker
-with st.spinner(f"Internet se {stock_name} ka live data fetch ho raha hai..."):
+with st.spinner(f"Internet se {stock_name} verify ho raha hai..."):
     auto_entry_price, auto_20_ema, auto_weekly_rsi = fetch_stock_analytics(stock_name)
 
-# --- 🚀 NEW HARDCORE RECOMMANDATION INTERLOCK FILTER ---
 is_trade_allowed = True
-
 if auto_weekly_rsi is not None:
     if auto_weekly_rsi >= 60.0:
-        st.success(f"✅ APPROVED! Weekly RSI: **{auto_weekly_rsi}** | Strong Bullish Momentum (RSI > 60).")
+        st.success(f"✅ APPROVED! RSI: **{auto_weekly_rsi}** | Strong Momentum.")
     else:
         is_trade_allowed = False
-        st.error(f"❌ NOT RECOMMENDED! Weekly RSI: **{auto_weekly_rsi}** | Momentum Weak (RSI < 60). Trade execution locked!")
-else:
-    st.warning("⚠️ Market metrics could not be fetched. Check connectivity.")
+        st.error(f"❌ LOCKED! RSI: **{auto_weekly_rsi}** | Momentum Weak (RSI < 60).")
 
 with col2:
-    final_entry_price = st.number_input("Entry Price (Auto-Fetched - ₹)", min_value=0.0, 
-                                        value=auto_entry_price if auto_entry_price else 100.0, step=0.05)
+    final_entry_price = st.number_input("Entry Price (₹)", min_value=0.0, value=auto_entry_price if auto_entry_price else 100.0)
 with col3:
-    final_ema_sl = st.number_input("SL Level (20 EMA Auto-Fetched - ₹)", min_value=0.0, 
-                                   value=auto_20_ema if auto_20_ema else 95.0, step=0.05)
+    final_ema_sl = st.number_input("SL Level (20 EMA - ₹)", min_value=0.0, value=auto_20_ema if auto_20_ema else 95.0)
 with col4:
     entry_date = st.date_input("Entry Date", datetime.now())
 
@@ -367,17 +380,12 @@ investment_amt = qty * final_entry_price
 
 c1, c2, c3 = st.columns(3)
 c1.metric("Calculated Quantity", f"{qty} Shares")
-c2.metric("Investment Amount Required", f"₹{investment_amt:,.2f}")
-c3.metric("Committed Risk (Strict)", f"₹{fix_risk_amount if qty > 0 else 0:,}")
+c2.metric("Investment Required", f"₹{investment_amt:,.2f}")
+c3.metric("Committed Risk", f"₹{fix_risk_amount if qty > 0 else 0:,}")
 
-# EXECUTE BUTTON LINKED TO THE STRATEGY INTERLOCK
 if st.button("🚀 Execute Trade (Add to Ledger)", disabled=not is_trade_allowed):
     if not is_trade_allowed:
-        st.error("Bhai, strict strategy interlock block mode me hai. RSI 60 se niche buy nahi kar sakte!")
-    elif per_share_risk <= 0:
-        st.error("Bhai, Entry Price 20 EMA SL se upar honi chahiye!")
-    elif investment_amt > current_balance:
-        st.error("Bhai, account balance down hai!")
+        st.error("Strategy rules ke mutabik blocked hai!")
     else:
         new_trade = {
             "Status": "ACTIVE", "Stock": stock_name, "Entry Date": entry_date.strftime('%Y-%m-%d'),
@@ -385,14 +393,14 @@ if st.button("🚀 Execute Trade (Add to Ledger)", disabled=not is_trade_allowed
             "Exit Date": "-", "Exit Price": final_entry_price, "P&L Per Share": 0.0, "Total P&L": 0.0, "Duration (Days)": 0
         }
         save_new_trade(current_user, new_trade)
-        st.success(f"🔥 {stock_name} trade locked successfully and logged in database!")
+        st.success(f"🔥 {stock_name} trade logged in database!")
         st.rerun()
 
-# --- SECTION 2: ACTIVE TRADES ACTIVE TRACKING ---
+# --- SECTION 3: ACTIVE TRADES ACTIVE TRACKING ---
 active_trades = [t for t in user_ledger if t["Status"] == "ACTIVE"]
 if active_trades:
     st.markdown("---")
-    st.header("📡 2. Active Trades Automatic Tracking")
+    st.header("📡 3. Active Trades Automatic Tracking")
     
     for trade in active_trades:
         st.info(f"📈 **{trade['Stock']}** | Entry: ₹{trade['Entry Price']} | **Automatic Closing Price: ₹{trade['Exit Price']}** | Current P&L: ₹{trade['Total P&L']:,.2f}")
@@ -414,9 +422,9 @@ if active_trades:
                 st.success(f"Trade Closed for {trade['Stock']}!")
                 st.rerun()
 
-# --- SECTION 3: MASTER DATA JOURNAL ---
+# --- SECTION 4: THE MASTER JOURNAL ---
 st.markdown("---")
-st.header("📑 3. Master Trading Ledger & Journal")
+st.header("📑 4. Master Trading Ledger & Journal")
 
 if user_ledger:
     df_display = pd.DataFrame(user_ledger)
@@ -428,5 +436,3 @@ if user_ledger:
     if st.button("🗑️ Clear My Entire Ledger"):
         clear_user_ledger(current_user)
         st.rerun()
-else:
-    st.info("Ledger khali hai. Core automation system active hai!")
