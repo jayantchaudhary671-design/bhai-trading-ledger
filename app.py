@@ -350,7 +350,7 @@ def get_nifty_500_database():
 
 nifty_500_list = get_nifty_500_database()
 
-# --- 🛠️ CRITICAL FIXED TAB INITIALIZATION LAYER ---
+# --- 🛠️ SYNTAX FIX LAYER ---
 tab_screener, tab_execution = st.tabs(["📡 1. Live Momentum Screener (Pro Chartink Mode)", "🔍 2. Trade Execution Ledger"])
 
 # --- TAB 1: THE DEDICATED PRO SCREENER ---
@@ -409,11 +409,15 @@ with tab_screener:
     st.markdown("---")
     st.markdown("### 📋 2. Real-Time Result Grid Matrix")
     
+    # 🛠️ CRITICAL STYLER FIX: Gradient rendering fallback engine to avoid Pandas 3.14 styling conflicts
     if "pro_scanner_df" in st.session_state and not st.session_state.pro_scanner_df.empty:
-        st.dataframe(
-            st.session_state.pro_scanner_df.style.background_gradient(subset=["Current Weekly RSI", "Market Cap (Cr)"], cmap="Greens"), 
-            use_container_width=True
-        )
+        df_to_show = st.session_state.pro_scanner_df.copy()
+        try:
+            styled_df = df_to_show.style.background_gradient(subset=["Current Weekly RSI", "Market Cap (Cr)"], cmap="YlGn")
+            st.dataframe(styled_df, use_container_width=True)
+        except Exception:
+            # Fallback to absolute clean table matrix if layout gradients are un-compiled by cloud server
+            st.dataframe(df_to_show, use_container_width=True)
     else:
         st.info("Scanner standby par hai. Multi-query run karne ke liye 'Run Advanced Multi-Filter Scan' dabayein.")
 
