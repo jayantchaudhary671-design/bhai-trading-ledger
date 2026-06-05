@@ -6,7 +6,7 @@ import sqlite3
 import hashlib
 
 # App Settings
-st.set_page_config(page_title="Bhai Ka Bug-Free Cloud Terminal", layout="wide")
+st.set_page_config(page_title="Bhai Ka RSI-Interlocked Cloud Terminal", layout="wide")
 
 # --- DATABASE SETUP (SQLITE) FOR MULTI-USERS ---
 DB_FILE = "users_trading_ledger.db"
@@ -71,37 +71,46 @@ def delete_session(session_key):
     conn.commit()
     conn.close()
 
-# --- 100% ACCURATE DATA CLEANING FILTER ENGINE ---
+# --- 100% ACCURATE DATA CLEANING, 20 EMA & RSI ENGINE ---
 def fetch_stock_analytics(stock_symbol):
     try:
         symbol = stock_symbol.strip().upper()
         ticker_symbol = f"{symbol}.NS"
         ticker = yf.Ticker(ticker_symbol)
         
+        # We need historical data to calculate 20 EMA and 14 RSI on Weekly candles
         hist = ticker.history(period="2y", interval="1wk")
-        if hist.empty or len(hist) < 20:
+        if hist.empty or len(hist) < 30:
             ticker_symbol = f"{symbol}.BO"
             ticker = yf.Ticker(ticker_symbol)
             hist = ticker.history(period="2y", interval="1wk")
             
         if not hist.empty and len(hist) >= 20:
-            # 🛠️ CRITICAL FIX: Zero data, incomplete candles aur blank rows ko delete karna
+            # Data Cleaning: remove missing/corrupted points
             hist = hist.dropna(subset=['Close'])
             hist = hist[hist['Close'] > 0]
             
             current_price = round(hist['Close'].iloc[-1], 2)
             
-            # Pure Exponential Moving Average logic
+            # 1. 20 EMA (Weekly Close Based) Calculation
             ema_series = hist['Close'].ewm(span=20, adjust=False).mean()
             current_20_ema = round(ema_series.iloc[-1], 2)
             
-            return current_price, current_20_ema
-        return None, None
+            # 2. Pure Technical RSI (14) Weekly Calculation
+            delta = hist['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+            loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+            rs = gain / loss
+            rsi_series = 100 - (100 / (1 + rs))
+            current_rsi = round(rsi_series.iloc[-1], 2)
+            
+            return current_price, current_20_ema, current_rsi
+        return None, None, None
     except Exception as e:
-        return None, None
+        return None, None, None
 
 def get_live_price(stock_symbol):
-    p, _ = fetch_stock_analytics(stock_symbol)
+    p, _, _ = fetch_stock_analytics(stock_symbol)
     return p
 
 def load_user_trades(username):
@@ -147,7 +156,7 @@ def clear_user_ledger(username):
 
 init_db()
 
-# --- AUTO LOGIN SESSION ---
+# --- AUTO LOGIN SESSION ENGINE ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.current_user = ""
@@ -200,11 +209,11 @@ if st.sidebar.button("🚪 Logout Account"):
     st.rerun()
 
 st.title("🦅 Full-Scale Nifty 500 Multi-User Automated Trading Ledger")
-st.write("Strict ₹10,000 Risk Engine with Complete Data-Cleaning Architecture")
+st.write("Strict ₹10,000 Risk Engine with Weekly RSI Recommendation Interlock")
 
 user_ledger = load_user_trades(current_user)
 
-# --- VERIFIED NIFTY 500 DATABASE WITH ZOMATO INTEGRATED ---
+# --- NIFTY 500 DATABASE: ZOMATO REMOVED & ETERNAL ADDED PERMANENTLY ---
 @st.cache_data
 def get_nifty_500_database():
     stocks = [
@@ -223,9 +232,9 @@ def get_nifty_500_database():
         "CHALET", "CHAMBLFERT", "CHOLAHLDNG", "CHOLAFIN", "CIPLA", "CLEAN", "COALINDIA", "COCHINSHIP",
         "COFORGE", "COLPAL", "CRAFTSMAN", "CREDITACC", "CROMPTON", "CUMMINSIND", "CYIENT", "DCAL",
         "DCBBANK", "DLF", "DABUR", "DALBHARAT", "DATAPATTNS", "DEEPAKFERT", "DEEPAKNTR", "DELHIVERY",
-        "DEVYANI", "DIVISLAB", "DIXON", "DONEAR", "LALPATHLAB", "DRREDDY", "EIDPARRY", "EIHOTEL",
+        "DEVYANI", "DIVISLAB", "DIXON", "DONEAR", "ETERNAL", "LALPATHLAB", "DRREDDY", "EIDPARRY", "EIHOTEL",
         "EPL", "EASEMYTRIP", "EICHERMOT", "ELECON", "ELGIEQUIP", "EMAMILTD", "ENDOCO", "ENGINERSIN",
-        "ERIS", "ESCORTSTRAC", "ETERNAL", "EXIDEIND", "FDC", "FEDERALBNK", "FACT", "FINEORG",
+        "ERIS", "ESCORTSTRAC", "EXIDEIND", "FDC", "FEDERALBNK", "FACT", "FINEORG",
         "FINCABLES", "FINPIPE", "FLUOROCHEM", "FORTIS", "GRINFRA", "GAIL", "GMMPFAUDLR", "GMRINFRA",
         "GOCLCORP", "GPTINFRA", "GATEWAY", "GENUSPOWER", "GLAND", "GLAXO", "GLENMARK", "GOCOLORS",
         "GODFRYPHLP", "GODREJAGRO", "GODREJCP", "GODREJIND", "GODREJPROP", "GRANULES", "GRAPHITE", "GRASIM",
@@ -263,7 +272,7 @@ def get_nifty_500_database():
         "SHARDAMOTR", "SHARDACROP", "SHAREINDIA", "SHOPERSTOP", "SHREECEM", "SHRIRAMFIN", "SIEMENS",
         "SIGNATURE", "SOBHA", "SOLARINDS", "SONACOMS", "SONATSOFTW", "SOUTHBANK", "SPANDANA",
         "SPARC", "STARHEALTH", "SBIN", "STEELCAS", "STERTOOLS", "STLTECH", "SUMICHEM",
-        "SUNTV", "SUNDARMFIN", "SUNDRMFAST", "SUNTECK", "SUPRAJIT", "SUPREMEIND", 
+        "SPHARM", "SUNTV", "SUNDARMFIN", "SUNDRMFAST", "SUNTECK", "SUPRAJIT", "SUPREMEIND", 
         "SUZLON", "SWANENERGY", "SYNGENE", "SYRMA", "TEGA", "TV18BRDCST", "TVSSCS", "TVSMOTOR",
         "TVSHLTD", "TASTYBITE", "TATACHEM", "TATACOMM", "TATACONSUM", "TATAELXSI", "TATAINVEST", "TATAMOTORS",
         "TATAMTRDVR", "TATAPOWER", "TATASTEEL", "TATATECH", "TTML", "TECHM", "TECHNOE", "TEJASNET",
@@ -280,11 +289,12 @@ def get_nifty_500_database():
 nifty_500_list = get_nifty_500_database()
 fix_risk_amount = 10000.0
 
+# Sidebar Metrics
 st.sidebar.header("💰 Balance Metrics")
 initial_capital = st.sidebar.number_input("Total Capital (₹)", min_value=100000, value=1000000, step=50000)
 
 if st.sidebar.button("🔄 Refresh Automatic Daily Prices"):
-    st.toast("Internet se live closing prices fetch ho rahi hain...")
+    st.toast("Internet se live data sync ho raha hai...")
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     for trade in user_ledger:
@@ -317,23 +327,30 @@ st.sidebar.metric(label="Current Account Value (Live)", value=f"₹{current_bala
 st.sidebar.metric(label="Total Invested Capital", value=f"₹{total_investment:,.2f}")
 st.sidebar.metric(label="Total Booked Profit/Loss", value=f"₹{closed_pnl:,.2f}")
 
-# --- SECTION 1: LOG ENTRY ---
+# --- SECTION 1: RSI CRITICAL INTERLOCK LOG NEW ENTRY ---
 st.header("🔍 1. Log New Trade Entry")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    # Zomato search list mein default select ho sakega bina kisi issue ke
-    default_index = nifty_500_list.index("ZOMATO") if "ZOMATO" in nifty_500_list else 0
+    # ETERNAL automatic load list configuration
+    default_index = nifty_500_list.index("SRF") if "SRF" in nifty_500_list else 0
     stock_name = st.selectbox("Select Stock (Nifty 500 Database)", options=nifty_500_list, index=default_index)
 
-with st.spinner(f"Internet se {stock_name} ki live market details nikal rahe hain..."):
-    auto_entry_price, auto_20_ema = fetch_stock_analytics(stock_name)
+# Automatic dynamic indicators fetching background worker
+with st.spinner(f"Internet se {stock_name} ka live data fetch ho raha hai..."):
+    auto_entry_price, auto_20_ema, auto_weekly_rsi = fetch_stock_analytics(stock_name)
 
-# 🚨 STRONG SYSTEM CHECK: Mathematical Trend Alert Engine
-is_invalid_trend = False
-if auto_entry_price and auto_20_ema and auto_20_ema > auto_entry_price:
-    is_invalid_trend = True
-    st.error(f"❌ STRATEGY BLOCK: {stock_name} abhi Downtrend mein hai! Weekly 20 EMA (₹{auto_20_ema}) Price (₹{auto_entry_price}) se zyada hai. Isme Entry nahi banti.")
+# --- 🚀 NEW HARDCORE RECOMMANDATION INTERLOCK FILTER ---
+is_trade_allowed = True
+
+if auto_weekly_rsi is not None:
+    if auto_weekly_rsi >= 60.0:
+        st.success(f"✅ APPROVED! Weekly RSI: **{auto_weekly_rsi}** | Strong Bullish Momentum (RSI > 60).")
+    else:
+        is_trade_allowed = False
+        st.error(f"❌ NOT RECOMMENDED! Weekly RSI: **{auto_weekly_rsi}** | Momentum Weak (RSI < 60). Trade execution locked!")
+else:
+    st.warning("⚠️ Market metrics could not be fetched. Check connectivity.")
 
 with col2:
     final_entry_price = st.number_input("Entry Price (Auto-Fetched - ₹)", min_value=0.0, 
@@ -353,13 +370,14 @@ c1.metric("Calculated Quantity", f"{qty} Shares")
 c2.metric("Investment Amount Required", f"₹{investment_amt:,.2f}")
 c3.metric("Committed Risk (Strict)", f"₹{fix_risk_amount if qty > 0 else 0:,}")
 
-if st.button("🚀 Execute Trade (Add to Ledger)"):
-    if is_invalid_trend:
-        st.error("Bhai, strict strategy rules ke mutabik downtrend stock buy nahi kar sakte!")
+# EXECUTE BUTTON LINKED TO THE STRATEGY INTERLOCK
+if st.button("🚀 Execute Trade (Add to Ledger)", disabled=not is_trade_allowed):
+    if not is_trade_allowed:
+        st.error("Bhai, strict strategy interlock block mode me hai. RSI 60 se niche buy nahi kar sakte!")
     elif per_share_risk <= 0:
         st.error("Bhai, Entry Price 20 EMA SL se upar honi chahiye!")
     elif investment_amt > current_balance:
-        st.error("Bhai, account mein itna capital nahi bacha hai!")
+        st.error("Bhai, account balance down hai!")
     else:
         new_trade = {
             "Status": "ACTIVE", "Stock": stock_name, "Entry Date": entry_date.strftime('%Y-%m-%d'),
@@ -367,10 +385,10 @@ if st.button("🚀 Execute Trade (Add to Ledger)"):
             "Exit Date": "-", "Exit Price": final_entry_price, "P&L Per Share": 0.0, "Total P&L": 0.0, "Duration (Days)": 0
         }
         save_new_trade(current_user, new_trade)
-        st.success(f"🔥 {stock_name} executed successfully and tracked permanently!")
+        st.success(f"🔥 {stock_name} trade locked successfully and logged in database!")
         st.rerun()
 
-# --- SECTION 2: ACTIVE TRADES TRACKING ---
+# --- SECTION 2: ACTIVE TRADES ACTIVE TRACKING ---
 active_trades = [t for t in user_ledger if t["Status"] == "ACTIVE"]
 if active_trades:
     st.markdown("---")
@@ -396,7 +414,7 @@ if active_trades:
                 st.success(f"Trade Closed for {trade['Stock']}!")
                 st.rerun()
 
-# --- SECTION 3: THE MASTER JOURNAL ---
+# --- SECTION 3: MASTER DATA JOURNAL ---
 st.markdown("---")
 st.header("📑 3. Master Trading Ledger & Journal")
 
@@ -411,5 +429,4 @@ if user_ledger:
         clear_user_ledger(current_user)
         st.rerun()
 else:
-    st.info("Abhi aapka personal ledger khali hai. Tickers select karke dynamic automation check karein!")
-                
+    st.info("Ledger khali hai. Core automation system active hai!")
