@@ -73,14 +73,14 @@ def delete_session(session_key):
     conn.close()
 
 # --- 100% ADVANCED HISTORICAL DATA ENGINE FOR BULK SCREENING ---
-def fetch_full_screener_analytics(stock_symbol, n_weeks):
+def fetch_full_screener_analytics(stock_symbol, n_weeks=1):
     try:
         symbol = stock_symbol.strip().upper()
         ticker_symbol = f"{symbol}.NS"
         ticker = yf.Ticker(ticker_symbol)
         
         hist = ticker.history(period="2y", interval="1wk")
-        if hist.empty or len(hist) < (20 + n_weeks):
+       if hist.empty or len(hist) < 20:
             ticker_symbol = f"{symbol}.BO"
             ticker = yf.Ticker(ticker_symbol)
             hist = ticker.history(period="2y", interval="1wk")
@@ -108,12 +108,12 @@ def fetch_full_screener_analytics(stock_symbol, n_weeks):
             
             current_rsi = round(rsi_series.iloc[-1], 2)
             
-        return current_price, current_20_ema, current_rsi, mcap_crores
+            return current_price, current_20_ema, current_rsi, mcap_crores
         return None, None, None, 0.0, None
     except Exception:
         return None, None, None, 0.0, None
 
-def run_pro_bulk_screener(stock_list, n_weeks):
+def run_pro_bulk_screener(stock_list, n_weeks=1):
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=25) as executor:
         future_to_stock = {executor.submit(fetch_full_screener_analytics, stock, n_weeks): stock for stock in stock_list}
@@ -128,7 +128,7 @@ def run_pro_bulk_screener(stock_list, n_weeks):
                         "Weekly 20 EMA (₹)": ema,
                         "Current Weekly RSI": rsi,
                         "Market Cap (Cr)": mcap,
-                
+                    
                     })
             except Exception:
                 pass
@@ -357,62 +357,108 @@ with tab_screener:
     st.markdown("### 🛠️ 1. Configure Scanner Filters")
     c_f1, c_f2, c_f3 = st.columns(3)
     
-    with c_f1:
-        enable_rsi = st.toggle("Enable RSI Filter", value=True)
+with c_f1:
 
-        rsi_min = st.number_input(
+    st.subheader("Current RSI")
+
+    enable_rsi = st.toggle(
+        "Enable RSI Filter",
+        value=True
+    )
+
+    rsi_min = st.number_input(
         "RSI Min",
         value=60.0
-        )
+    )
 
-        rsi_max = st.number_input(
+    rsi_max = st.number_input(
         "RSI Max",
         value=70.0
-        )
-        
+    )
+
+with c_f2:
+
+    st.subheader("Universe")
+
+    universe_size = st.selectbox(
+        "Select Universe",
+        [
+            "Top 100",
+            "Top 200",
+            "Top 300",
+            "Top 400",
+            "Top 500"
+        ]
+    )
+
+    universe_map = {
+        "Top 100":100,
+        "Top 200":200,
+        "Top 300":300,
+        "Top 400":400,
+        "Top 500":500
+    }
+
+    scan_batch_limit = universe_map[universe_size]
+
+with c_f3:
+
+    st.subheader("Market Cap")
+
+    enable_mcap = st.toggle(
+        "Enable Market Cap Filter",
+        value=False
+    )
+
+    mcap_min = st.number_input(
+        "Market Cap Min (Cr)",
+        value=0
+    )
+
+    mcap_max = st.number_input(
+        "Market Cap Max (Cr)",
+        value=99999999
+    )
+
    
-        
-    with c_f3:
-        st.markdown("**Company Fundamental Filters**")
-        mcap_direction = st.selectbox("Market Cap Filter Condition", ["Less Than (<) [Small/Midcap Focus]", "Greater Than (>) [Largecap Focus]"])
-        mcap_cutoff = st.number_input("Market Cap Threshold Value (In Crores)", min_value=100, max_value=500000, value=20000, step=1000)
-        
-    scan_batch_limit = st.slider("Batch Size Limit for Real-time Cloud Scanner", min_value=10, max_value=200, value=40, step=10)
     scannable_stocks = nifty_500_list[:scan_batch_limit]
     
     if st.button("🔥 Run Advanced Multi-Filter Scan"):
-      with st.spinner("Processing Nifty 500 live candles... System analyzing Chartink queries..."):
-            raw_matrix_results = run_pro_bulk_screener(scannable_stocks, n_weeks_ago)
-            
+        with st.spinner("Processing Nifty 500 live candles... System analyzing Chartink queries..."):
+           raw_matrix_results = run_pro_bulk_screener(
+    scannable_stocks,
+    1
+    )
             filtered_matrix = []
             for item in raw_matrix_results:
                 c_rsi = item["Current Weekly RSI"]
 
-pass_current_rsi = True
-         if enable_rsi:
+    pass_current_rsi = True
+
+    if enable_rsi:
     pass_current_rsi = (
         rsi_min <= c_rsi <= rsi_max
     )
 
-c_mcap = item["Market Cap (Cr)"]
+    c_mcap = item["Market Cap (Cr)"]
 
-pass_mcap = True
-if enable_mcap:
+    pass_mcap = True
+
+    if enable_mcap:
     pass_mcap = (
         mcap_min <= c_mcap <= mcap_max
     )
 
-if pass_current_rsi and pass_mcap:
+    if pass_current_rsi and pass_mcap:
 
     item["TradingView"] = (
         f"https://www.tradingview.com/chart/?symbol=NSE:{item['Stock']}"
     )
 
     item["Screener Verification"] = "✅ MATCH APPROVED"
-
+    
+    )
     filtered_matrix.append(item)
-                    item["Screener Verification"] = "✅ MATCH APPROVED"
-                    filtered_matrix.append(item)
                     
             st.session_state.pro_scanner_df = pd.DataFrame(filtered_matrix)
             st.success(f"Scan Completed! Found {len(filtered_matrix)} stocks matching all specifications.")
@@ -423,9 +469,50 @@ if pass_current_rsi and pass_mcap:
     # 🛠️ CRITICAL STYLER FIX: Gradient rendering fallback engine to avoid Pandas 3.14 styling conflicts
     if "pro_scanner_df" in st.session_state and not st.session_state.pro_scanner_df.empty:
         df_to_show = st.session_state.pro_scanner_df.copy()
+        sort_by = st.selectbox(
+    "Sort Results By",
+    [
+        "RSI High-Low",
+        "RSI Low-High",
+        "Market Cap High-Low",
+        "Market Cap Low-High"
+    ]
+)
+
+if sort_by == "RSI High-Low":
+    df_to_show = df_to_show.sort_values(
+        "Current Weekly RSI",
+        ascending=False
+    )
+
+elif sort_by == "RSI Low-High":
+    df_to_show = df_to_show.sort_values(
+        "Current Weekly RSI",
+        ascending=True
+    )
+
+elif sort_by == "Market Cap High-Low":
+    df_to_show = df_to_show.sort_values(
+        "Market Cap (Cr)",
+        ascending=False
+    )
+
+elif sort_by == "Market Cap Low-High":
+    df_to_show = df_to_show.sort_values(
+        "Market Cap (Cr)",
+        ascending=True
+    )
         try:
             styled_df = df_to_show.style.background_gradient(subset=["Current Weekly RSI", "Market Cap (Cr)"], cmap="YlGn")
             st.dataframe(styled_df, use_container_width=True)
+            csv = df_to_show.to_csv(index=False)
+
+            st.download_button(
+                "📥 Export CSV",
+                csv,
+                "scanner_results.csv",
+                "text/csv"
+            )
         except Exception:
             # Fallback to absolute clean table matrix if layout gradients are un-compiled by cloud server
             st.dataframe(df_to_show, use_container_width=True)
