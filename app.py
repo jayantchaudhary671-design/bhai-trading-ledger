@@ -381,25 +381,36 @@ with tab_screener:
     scannable_stocks = nifty_500_list[:scan_batch_limit]
     
     if st.button("🔥 Run Advanced Multi-Filter Scan"):
-        with st.spinner("Processing Nifty 500 live candles... System analyzing Chartink queries..."):
+      with st.spinner("Processing Nifty 500 live candles... System analyzing Chartink queries..."):
             raw_matrix_results = run_pro_bulk_screener(scannable_stocks, n_weeks_ago)
             
             filtered_matrix = []
             for item in raw_matrix_results:
                 c_rsi = item["Current Weekly RSI"]
-                pass_current_rsi = (c_rsi >= rsi_cutoff) if "More Than" in rsi_direction else (c_rsi <= rsi_cutoff)
-                
-                h_rsi = item[f"{n_weeks_ago} Wks Ago RSI"]
-                pass_hist_rsi = True
-                if h_rsi is not None:
-                    pass_hist_rsi = (h_rsi >= hist_rsi_cutoff) if "More Than" in hist_rsi_direction else (h_rsi <= hist_rsi_cutoff)
-                else:
-                    pass_hist_rsi = False
-                    
-                c_mcap = item["Market Cap (Cr)"]
-                pass_mcap = (c_mcap <= mcap_cutoff) if "Less Than" in mcap_direction else (c_mcap >= mcap_cutoff)
-                
-                if pass_current_rsi and pass_hist_rsi and pass_mcap:
+
+pass_current_rsi = True
+         if enable_rsi:
+    pass_current_rsi = (
+        rsi_min <= c_rsi <= rsi_max
+    )
+
+c_mcap = item["Market Cap (Cr)"]
+
+pass_mcap = True
+if enable_mcap:
+    pass_mcap = (
+        mcap_min <= c_mcap <= mcap_max
+    )
+
+if pass_current_rsi and pass_mcap:
+
+    item["TradingView"] = (
+        f"https://www.tradingview.com/chart/?symbol=NSE:{item['Stock']}"
+    )
+
+    item["Screener Verification"] = "✅ MATCH APPROVED"
+
+    filtered_matrix.append(item)
                     item["Screener Verification"] = "✅ MATCH APPROVED"
                     filtered_matrix.append(item)
                     
