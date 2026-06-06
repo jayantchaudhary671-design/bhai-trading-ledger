@@ -414,7 +414,9 @@ st.session_state.pro_scanner_df = process_results_pipeline(
     st.session_state.pro_scanner_df,
     search_text
 )
-            st.success(f"Scan Completed! Found {len(filtered_matrix)} stocks matching all specifications.")
+st.success
+    (f"Scan Completed! Found {len(filtered_matrix)} stocks matching all specifications."
+)
             
     st.markdown("---")
     st.markdown("### 📋 2. Real-Time Result Grid Matrix")
