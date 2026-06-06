@@ -483,46 +483,46 @@ if st.button("🔥 Run Advanced Multi-Filter Scan"):
     ]
 )
 
-if sort_by == "RSI High-Low":
-    df_to_show = df_to_show.sort_values(
-        "Current Weekly RSI",
-        ascending=False
-    )
-
-elif sort_by == "RSI Low-High":
-    df_to_show = df_to_show.sort_values(
-        "Current Weekly RSI",
-        ascending=True
-    )
-
-elif sort_by == "Market Cap High-Low":
-    df_to_show = df_to_show.sort_values(
-        "Market Cap (Cr)",
-        ascending=False
-    )
-
-elif sort_by == "Market Cap Low-High":
-    df_to_show = df_to_show.sort_values(
-        "Market Cap (Cr)",
-        ascending=True
-    )
-
-try:
-    styled_df = df_to_show.style.background_gradient(
-        subset=["Current Weekly RSI", "Market Cap (Cr)"],
-        cmap="YlGn"
-    )
-
-    st.dataframe(styled_df, use_container_width=True)
-
-    csv = df_to_show.to_csv(index=False)
-
-    st.download_button(
-        "📥 Export CSV",
-        csv,
-        "scanner_results.csv",
-        "text/csv"
-    )
+    if sort_by == "RSI High-Low":
+        df_to_show = df_to_show.sort_values(
+            "Current Weekly RSI",
+            ascending=False
+        )
+    
+    elif sort_by == "RSI Low-High":
+        df_to_show = df_to_show.sort_values(
+            "Current Weekly RSI",
+            ascending=True
+        )
+    
+    elif sort_by == "Market Cap High-Low":
+        df_to_show = df_to_show.sort_values(
+            "Market Cap (Cr)",
+            ascending=False
+        )
+    
+    elif sort_by == "Market Cap Low-High":
+        df_to_show = df_to_show.sort_values(
+            "Market Cap (Cr)",
+            ascending=True
+        )
+    
+    try:
+        styled_df = df_to_show.style.background_gradient(
+            subset=["Current Weekly RSI", "Market Cap (Cr)"],
+            cmap="YlGn"
+        )
+    
+        st.dataframe(styled_df, use_container_width=True)
+    
+        csv = df_to_show.to_csv(index=False)
+    
+        st.download_button(
+            "📥 Export CSV",
+            csv,
+            "scanner_results.csv",
+            "text/csv"
+        )
 
 except Exception:
     st.dataframe(
