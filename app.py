@@ -529,8 +529,7 @@ except Exception:
         df_to_show,
         use_container_width=True
     )
-    else:
-        st.info("Scanner standby par hai. Multi-query run karne ke liye 'Run Advanced Multi-Filter Scan' dabayein.")
+    
 
 # --- TAB 2: POSITION SIZING ENGINE & TRADING JOURNAL ---
 with tab_execution:
