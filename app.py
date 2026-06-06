@@ -525,7 +525,10 @@ try:
     )
 
 except Exception:
-    st.dataframe(df_to_show, use_container_width=True)
+    st.dataframe(
+        df_to_show,
+        use_container_width=True
+    )
     else:
         st.info("Scanner standby par hai. Multi-query run karne ke liye 'Run Advanced Multi-Filter Scan' dabayein.")
 
