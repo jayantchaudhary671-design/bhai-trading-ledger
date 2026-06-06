@@ -472,63 +472,73 @@ if st.button("🔥 Run Advanced Multi-Filter Scan"):
     
     # 🛠️ CRITICAL STYLER FIX: Gradient rendering fallback engine to avoid Pandas 3.14 styling conflicts
     if "pro_scanner_df" in st.session_state and not st.session_state.pro_scanner_df.empty:
-        df_to_show = st.session_state.pro_scanner_df.copy()
-        sort_by = st.selectbox(
-    "Sort Results By",
-    [
-        "RSI High-Low",
-        "RSI Low-High",
-        "Market Cap High-Low",
-        "Market Cap Low-High"
-    ]
-)
+
+    df_to_show = st.session_state.pro_scanner_df.copy()
+
+    sort_by = st.selectbox(
+        "Sort Results By",
+        [
+            "RSI High-Low",
+            "RSI Low-High",
+            "Market Cap High-Low",
+            "Market Cap Low-High"
+        ]
+    )
 
     if sort_by == "RSI High-Low":
         df_to_show = df_to_show.sort_values(
             "Current Weekly RSI",
             ascending=False
         )
-    
+
     elif sort_by == "RSI Low-High":
         df_to_show = df_to_show.sort_values(
             "Current Weekly RSI",
             ascending=True
         )
-    
+
     elif sort_by == "Market Cap High-Low":
         df_to_show = df_to_show.sort_values(
             "Market Cap (Cr)",
             ascending=False
         )
-    
+
     elif sort_by == "Market Cap Low-High":
         df_to_show = df_to_show.sort_values(
             "Market Cap (Cr)",
             ascending=True
         )
-    
-            try:
-            styled_df = df_to_show.style.background_gradient(
-                subset=["Current Weekly RSI", "Market Cap (Cr)"],
-                cmap="YlGn"
-            )
 
-            st.dataframe(styled_df, use_container_width=True)
+    try:
+        styled_df = df_to_show.style.background_gradient(
+            subset=["Current Weekly RSI", "Market Cap (Cr)"],
+            cmap="YlGn"
+        )
 
-            csv = df_to_show.to_csv(index=False)
+        st.dataframe(
+            styled_df,
+            use_container_width=True
+        )
 
-            st.download_button(
-                "📥 Export CSV",
-                csv,
-                "scanner_results.csv",
-                "text/csv"
-            )
+        csv = df_to_show.to_csv(index=False)
 
-        except Exception:
-            st.dataframe(
-                df_to_show,
-                use_container_width=True
-            )
+        st.download_button(
+            "📥 Export CSV",
+            csv,
+            "scanner_results.csv",
+            "text/csv"
+        )
+
+    except Exception:
+        st.dataframe(
+            df_to_show,
+            use_container_width=True
+        )
+
+else:
+    st.info(
+        "Scanner standby par hai. Multi-query run karne ke liye 'Run Advanced Multi-Filter Scan' dabayein."
+    )
     
 
 # --- TAB 2: POSITION SIZING ENGINE & TRADING JOURNAL ---
