@@ -108,11 +108,7 @@ def fetch_full_screener_analytics(stock_symbol, n_weeks):
             
             current_rsi = round(rsi_series.iloc[-1], 2)
             
-            historical_rsi = None
-            if len(rsi_series) > (n_weeks + 1):
-                historical_rsi = round(rsi_series.iloc[-(n_weeks + 1)], 2)
-                
-            return current_price, current_20_ema, current_rsi, mcap_crores, historical_rsi
+        return current_price, current_20_ema, current_rsi, mcap_crores
         return None, None, None, 0.0, None
     except Exception:
         return None, None, None, 0.0, None
@@ -124,7 +120,7 @@ def run_pro_bulk_screener(stock_list, n_weeks):
         for future in concurrent.futures.as_completed(future_to_stock):
             stock = future_to_stock[future]
             try:
-                price, ema, rsi, mcap, hist_rsi = future.result()
+                price, ema, rsi, mcap = future.result()
                 if price and rsi:
                     results.append({
                         "Stock": stock,
@@ -132,7 +128,7 @@ def run_pro_bulk_screener(stock_list, n_weeks):
                         "Weekly 20 EMA (₹)": ema,
                         "Current Weekly RSI": rsi,
                         "Market Cap (Cr)": mcap,
-                        f"{n_weeks} Wks Ago RSI": hist_rsi
+                
                     })
             except Exception:
                 pass
@@ -362,15 +358,19 @@ with tab_screener:
     c_f1, c_f2, c_f3 = st.columns(3)
     
     with c_f1:
-        st.markdown("**Current Weekly RSI Filters**")
-        rsi_direction = st.selectbox("Current Weekly RSI Condition", ["More Than (>) ", "Less Than (<)"])
-        rsi_cutoff = st.slider("Select Current RSI Cutoff Value", min_value=10.0, max_value=90.0, value=60.0, step=1.0)
+        enable_rsi = st.toggle("Enable RSI Filter", value=True)
+
+        rsi_min = st.number_input(
+        "RSI Min",
+        value=60.0
+        )
+
+        rsi_max = st.number_input(
+        "RSI Max",
+        value=70.0
+        )
         
-    with c_f2:
-        st.markdown("**Historical RSI Filters (N Weeks Ago)**")
-        n_weeks_ago = st.number_input("Enter 'N' (Number of Weeks Ago)", min_value=1, max_value=20, value=4, step=1)
-        hist_rsi_direction = st.selectbox("Historical RSI Condition", ["More Than (>) ", "Less Than (<)"])
-        hist_rsi_cutoff = st.slider("Select Historical RSI Cutoff Value", min_value=10.0, max_value=90.0, value=60.0, step=1.0)
+   
         
     with c_f3:
         st.markdown("**Company Fundamental Filters**")
