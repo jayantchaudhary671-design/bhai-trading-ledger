@@ -5,6 +5,10 @@ import yfinance as yf
 import sqlite3
 import hashlib
 import concurrent.futures
+import secrets
+import time
+import random
+import plotly.express as px
 
 # App Settings
 st.set_page_config(page_title="Bhai Ka Pro Chartink Scanner", layout="wide")
@@ -51,7 +55,7 @@ def make_signup(username, password):
 def save_session(username):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    session_key = hash_password(username + "_secret_salt")
+    session_key = secrets.token_hex(32)
     c.execute("INSERT OR REPLACE INTO active_sessions (session_key, username) VALUES (?, ?)", (session_key, username))
     conn.commit()
     conn.close()
@@ -73,6 +77,22 @@ def delete_session(session_key):
     conn.close()
 
 # --- 100% ADVANCED HISTORICAL DATA ENGINE FOR BULK SCREENING ---
+
+def get_live_price(stock_symbol):
+    try:
+        ticker = yf.Ticker(f"{stock_symbol}.NS")
+        data = ticker.history(period="1d")
+        if not data.empty:
+            return round(float(data["Close"].iloc[-1]), 2)
+        ticker = yf.Ticker(f"{stock_symbol}.BO")
+        data = ticker.history(period="1d")
+        if not data.empty:
+            return round(float(data["Close"].iloc[-1]), 2)
+        return None
+    except Exception:
+        return None
+
+
 def fetch_full_screener_analytics(stock_symbol, n_weeks):
     try:
         symbol = stock_symbol.strip().upper()
@@ -125,7 +145,7 @@ def run_pro_bulk_screener(stock_list, n_weeks):
             stock = future_to_stock[future]
             try:
                 price, ema, rsi, mcap, hist_rsi = future.result()
-                if price and rsi:
+                if price is not None and rsi is not None:
                     results.append({
                         "Stock": stock,
                         "Current Price (₹)": price,
@@ -514,3 +534,4 @@ with tab_execution:
             st.rerun()
     else:
         st.info("Ledger khali hai. Data core matrix database engine active.")
+
