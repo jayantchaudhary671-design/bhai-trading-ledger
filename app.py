@@ -423,42 +423,46 @@ with c_f3:
    
     scannable_stocks = nifty_500_list[:scan_batch_limit]
     
-    if st.button("🔥 Run Advanced Multi-Filter Scan"):
-        with st.spinner("Processing Nifty 500 live candles... System analyzing Chartink queries..."):
-           raw_matrix_results = run_pro_bulk_screener(
-    scannable_stocks,
-    1
-    )
-            filtered_matrix = []
-            for item in raw_matrix_results:
-                c_rsi = item["Current Weekly RSI"]
+if st.button("🔥 Run Advanced Multi-Filter Scan"):
 
-    pass_current_rsi = True
+    with st.spinner("Processing Nifty 500 live candles... System analyzing Chartink queries..."):
 
-    if enable_rsi:
-    pass_current_rsi = (
-        rsi_min <= c_rsi <= rsi_max
-    )
+        raw_matrix_results = run_pro_bulk_screener(
+            scannable_stocks,
+            1
+        )
 
-    c_mcap = item["Market Cap (Cr)"]
+        filtered_matrix = []
 
-    pass_mcap = True
+        for item in raw_matrix_results:
 
-    if enable_mcap:
-    pass_mcap = (
-        mcap_min <= c_mcap <= mcap_max
-    )
+            c_rsi = item["Current Weekly RSI"]
 
-    if pass_current_rsi and pass_mcap:
+            pass_current_rsi = True
 
-    item["TradingView"] = (
-        f"https://www.tradingview.com/chart/?symbol=NSE:{item['Stock']}"
-    )
+            if enable_rsi:
+                pass_current_rsi = (
+                    rsi_min <= c_rsi <= rsi_max
+                )
 
-    item["Screener Verification"] = "✅ MATCH APPROVED"
-    
-    )
-    filtered_matrix.append(item)
+            c_mcap = item["Market Cap (Cr)"]
+
+            pass_mcap = True
+
+            if enable_mcap:
+                pass_mcap = (
+                    mcap_min <= c_mcap <= mcap_max
+                )
+
+            if pass_current_rsi and pass_mcap:
+
+                item["TradingView"] = (
+                    f"https://www.tradingview.com/chart/?symbol=NSE:{item['Stock']}"
+                )
+
+                item["Screener Verification"] = "✅ MATCH APPROVED"
+
+                filtered_matrix.append(item)
                     
             st.session_state.pro_scanner_df = pd.DataFrame(filtered_matrix)
             st.success(f"Scan Completed! Found {len(filtered_matrix)} stocks matching all specifications.")
