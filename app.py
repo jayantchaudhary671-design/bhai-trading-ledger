@@ -9,6 +9,7 @@ import secrets
 import time
 import random
 import plotly.express as px
+from chartink_v2_features import *
 
 # App Settings
 st.set_page_config(page_title="Bhai Ka Pro Chartink Scanner", layout="wide")
@@ -379,26 +380,17 @@ with tab_screener:
     st.write("Apne rules ke hisab se parameters set kijiye aur Nifty 500 stocks ko instantly scan kijiye:")
     
     st.markdown("### 🛠️ 1. Configure Scanner Filters")
-    c_f1, c_f2, c_f3 = st.columns(3)
-    
-    with c_f1:
-        st.markdown("**Current Weekly RSI Filters**")
-        rsi_direction = st.selectbox("Current Weekly RSI Condition", ["More Than (>) ", "Less Than (<)"])
-        rsi_cutoff = st.slider("Select Current RSI Cutoff Value", min_value=10.0, max_value=90.0, value=60.0, step=1.0)
-        
-    with c_f2:
-        st.markdown("**Historical RSI Filters (N Weeks Ago)**")
-        n_weeks_ago = st.number_input("Enter 'N' (Number of Weeks Ago)", min_value=1, max_value=20, value=4, step=1)
-        hist_rsi_direction = st.selectbox("Historical RSI Condition", ["More Than (>) ", "Less Than (<)"])
-        hist_rsi_cutoff = st.slider("Select Historical RSI Cutoff Value", min_value=10.0, max_value=90.0, value=60.0, step=1.0)
-        
-    with c_f3:
-        st.markdown("**Company Fundamental Filters**")
-        mcap_direction = st.selectbox("Market Cap Filter Condition", ["Less Than (<) [Small/Midcap Focus]", "Greater Than (>) [Largecap Focus]"])
-        mcap_cutoff = st.number_input("Market Cap Threshold Value (In Crores)", min_value=100, max_value=500000, value=20000, step=1000)
-        
-    scan_batch_limit = st.slider("Batch Size Limit for Real-time Cloud Scanner", min_value=10, max_value=200, value=40, step=10)
-    scannable_stocks = nifty_500_list[:scan_batch_limit]
+  filters = render_v2_filter_panel()
+
+search_text = render_search_box()
+
+full_scan, scan_batch_limit = render_scan_options()
+
+scannable_stocks = get_scan_universe(
+    nifty_500_list,
+    full_scan,
+    scan_batch_limit
+)
     
     if st.button("🔥 Run Advanced Multi-Filter Scan"):
         with st.spinner("Processing Nifty 500 live candles... System analyzing Chartink queries..."):
@@ -406,24 +398,19 @@ with tab_screener:
             
             filtered_matrix = []
             for item in raw_matrix_results:
-                c_rsi = item["Current Weekly RSI"]
-                pass_current_rsi = (c_rsi >= rsi_cutoff) if "More Than" in rsi_direction else (c_rsi <= rsi_cutoff)
-                
-                h_rsi = item[f"{n_weeks_ago} Wks Ago RSI"]
-                pass_hist_rsi = True
-                if h_rsi is not None:
-                    pass_hist_rsi = (h_rsi >= hist_rsi_cutoff) if "More Than" in hist_rsi_direction else (h_rsi <= hist_rsi_cutoff)
-                else:
-                    pass_hist_rsi = False
-                    
-                c_mcap = item["Market Cap (Cr)"]
-                pass_mcap = (c_mcap <= mcap_cutoff) if "Less Than" in mcap_direction else (c_mcap >= mcap_cutoff)
-                
-                if pass_current_rsi and pass_hist_rsi and pass_mcap:
+               if validate_filters(item, filters):
+
+    item["Screener Verification"] = "✅ MATCH APPROVED"
+
+    filtered_matrix.append(item)
                     item["Screener Verification"] = "✅ MATCH APPROVED"
                     filtered_matrix.append(item)
                     
             st.session_state.pro_scanner_df = pd.DataFrame(filtered_matrix)
+st.session_state.pro_scanner_df = process_results_pipeline(
+    st.session_state.pro_scanner_df,
+    search_text
+)
             st.success(f"Scan Completed! Found {len(filtered_matrix)} stocks matching all specifications.")
             
     st.markdown("---")
@@ -477,6 +464,11 @@ with tab_execution:
     c3.metric("Committed Capital Risk (1% of Total)", f"₹{calculated_risk_per_trade:,.2f}")
     
     if st.button("🚀 Execute Trade (Add to Ledger)", disabled=not is_trade_allowed):
+        if not validate_trade_entry(
+    user_ledger,
+    stock_name
+):
+    st.stop()
         if not is_trade_allowed:
             st.error("Trade entry is strictly locked under risk parameters guidelines.")
         elif per_share_risk <= 0:
