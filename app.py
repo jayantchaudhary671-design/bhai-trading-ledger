@@ -507,28 +507,28 @@ if st.button("🔥 Run Advanced Multi-Filter Scan"):
             ascending=True
         )
     
-    try:
-        styled_df = df_to_show.style.background_gradient(
-            subset=["Current Weekly RSI", "Market Cap (Cr)"],
-            cmap="YlGn"
-        )
-    
-        st.dataframe(styled_df, use_container_width=True)
-    
-        csv = df_to_show.to_csv(index=False)
-    
-        st.download_button(
-            "📥 Export CSV",
-            csv,
-            "scanner_results.csv",
-            "text/csv"
-        )
+            try:
+            styled_df = df_to_show.style.background_gradient(
+                subset=["Current Weekly RSI", "Market Cap (Cr)"],
+                cmap="YlGn"
+            )
 
-except Exception:
-    st.dataframe(
-        df_to_show,
-        use_container_width=True
-    )
+            st.dataframe(styled_df, use_container_width=True)
+
+            csv = df_to_show.to_csv(index=False)
+
+            st.download_button(
+                "📥 Export CSV",
+                csv,
+                "scanner_results.csv",
+                "text/csv"
+            )
+
+        except Exception:
+            st.dataframe(
+                df_to_show,
+                use_container_width=True
+            )
     
 
 # --- TAB 2: POSITION SIZING ENGINE & TRADING JOURNAL ---
