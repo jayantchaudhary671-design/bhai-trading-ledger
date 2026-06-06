@@ -5,11 +5,6 @@ import yfinance as yf
 import sqlite3
 import hashlib
 import concurrent.futures
-import secrets
-import time
-import random
-import plotly.express as px
-from chartink_v2_features import *
 
 # App Settings
 st.set_page_config(page_title="Bhai Ka Pro Chartink Scanner", layout="wide")
@@ -56,7 +51,7 @@ def make_signup(username, password):
 def save_session(username):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    session_key = secrets.token_hex(32)
+    session_key = hash_password(username + "_secret_salt")
     c.execute("INSERT OR REPLACE INTO active_sessions (session_key, username) VALUES (?, ?)", (session_key, username))
     conn.commit()
     conn.close()
@@ -78,22 +73,6 @@ def delete_session(session_key):
     conn.close()
 
 # --- 100% ADVANCED HISTORICAL DATA ENGINE FOR BULK SCREENING ---
-
-def get_live_price(stock_symbol):
-    try:
-        ticker = yf.Ticker(f"{stock_symbol}.NS")
-        data = ticker.history(period="1d")
-        if not data.empty:
-            return round(float(data["Close"].iloc[-1]), 2)
-        ticker = yf.Ticker(f"{stock_symbol}.BO")
-        data = ticker.history(period="1d")
-        if not data.empty:
-            return round(float(data["Close"].iloc[-1]), 2)
-        return None
-    except Exception:
-        return None
-
-
 def fetch_full_screener_analytics(stock_symbol, n_weeks):
     try:
         symbol = stock_symbol.strip().upper()
@@ -146,7 +125,7 @@ def run_pro_bulk_screener(stock_list, n_weeks):
             stock = future_to_stock[future]
             try:
                 price, ema, rsi, mcap, hist_rsi = future.result()
-                if price is not None and rsi is not None:
+                if price and rsi:
                     results.append({
                         "Stock": stock,
                         "Current Price (₹)": price,
@@ -377,60 +356,55 @@ tab_screener, tab_execution = st.tabs(["📡 1. Live Momentum Screener (Pro Char
 # --- TAB 1: THE DEDICATED PRO SCREENER ---
 with tab_screener:
     st.header("🦅 Custom Real-Time Multi-Query Script Scanner")
-
-    st.write(
-        "Apne rules ke hisab se parameters set kijiye aur Nifty 500 stocks ko instantly scan kijiye:"
-    )
-
+    st.write("Apne rules ke hisab se parameters set kijiye aur Nifty 500 stocks ko instantly scan kijiye:")
+    
     st.markdown("### 🛠️ 1. Configure Scanner Filters")
-
-    filters = render_v2_filter_panel()
-
-    search_text = render_search_box()
-
-    full_scan, scan_batch_limit = render_scan_options()
-
-    scannable_stocks = get_scan_universe(
-        nifty_500_list,
-        full_scan,
-        scan_batch_limit
-    )
-
-if st.button("🔥 Run Advanced Multi-Filter Scan"):
-
-    with st.spinner(
-        "Processing Nifty 500 live candles... System analyzing Chartink queries..."
-    ):
-
-        n_weeks_ago = filters.get("historical_weeks", 4)
-
-        raw_matrix_results = run_pro_bulk_screener(
-            scannable_stocks,
-            n_weeks_ago
-        )
-
-        filtered_matrix = []
-
-        for item in raw_matrix_results:
-
-            if validate_filters(item, filters):
-
-                item["Screener Verification"] = "✅ MATCH APPROVED"
-
-                filtered_matrix.append(item)
-
-        st.session_state.pro_scanner_df = pd.DataFrame(
-            filtered_matrix
-        )
-
-        st.session_state.pro_scanner_df = process_results_pipeline(
-            st.session_state.pro_scanner_df,
-            search_text
-        )
-
-        st.success(
-            f"Scan Completed! Found {len(filtered_matrix)} stocks matching all specifications."
-        )
+    c_f1, c_f2, c_f3 = st.columns(3)
+    
+    with c_f1:
+        st.markdown("**Current Weekly RSI Filters**")
+        rsi_direction = st.selectbox("Current Weekly RSI Condition", ["More Than (>) ", "Less Than (<)"])
+        rsi_cutoff = st.slider("Select Current RSI Cutoff Value", min_value=10.0, max_value=90.0, value=60.0, step=1.0)
+        
+    with c_f2:
+        st.markdown("**Historical RSI Filters (N Weeks Ago)**")
+        n_weeks_ago = st.number_input("Enter 'N' (Number of Weeks Ago)", min_value=1, max_value=20, value=4, step=1)
+        hist_rsi_direction = st.selectbox("Historical RSI Condition", ["More Than (>) ", "Less Than (<)"])
+        hist_rsi_cutoff = st.slider("Select Historical RSI Cutoff Value", min_value=10.0, max_value=90.0, value=60.0, step=1.0)
+        
+    with c_f3:
+        st.markdown("**Company Fundamental Filters**")
+        mcap_direction = st.selectbox("Market Cap Filter Condition", ["Less Than (<) [Small/Midcap Focus]", "Greater Than (>) [Largecap Focus]"])
+        mcap_cutoff = st.number_input("Market Cap Threshold Value (In Crores)", min_value=100, max_value=500000, value=20000, step=1000)
+        
+    scan_batch_limit = st.slider("Batch Size Limit for Real-time Cloud Scanner", min_value=10, max_value=200, value=40, step=10)
+    scannable_stocks = nifty_500_list[:scan_batch_limit]
+    
+    if st.button("🔥 Run Advanced Multi-Filter Scan"):
+        with st.spinner("Processing Nifty 500 live candles... System analyzing Chartink queries..."):
+            raw_matrix_results = run_pro_bulk_screener(scannable_stocks, n_weeks_ago)
+            
+            filtered_matrix = []
+            for item in raw_matrix_results:
+                c_rsi = item["Current Weekly RSI"]
+                pass_current_rsi = (c_rsi >= rsi_cutoff) if "More Than" in rsi_direction else (c_rsi <= rsi_cutoff)
+                
+                h_rsi = item[f"{n_weeks_ago} Wks Ago RSI"]
+                pass_hist_rsi = True
+                if h_rsi is not None:
+                    pass_hist_rsi = (h_rsi >= hist_rsi_cutoff) if "More Than" in hist_rsi_direction else (h_rsi <= hist_rsi_cutoff)
+                else:
+                    pass_hist_rsi = False
+                    
+                c_mcap = item["Market Cap (Cr)"]
+                pass_mcap = (c_mcap <= mcap_cutoff) if "Less Than" in mcap_direction else (c_mcap >= mcap_cutoff)
+                
+                if pass_current_rsi and pass_hist_rsi and pass_mcap:
+                    item["Screener Verification"] = "✅ MATCH APPROVED"
+                    filtered_matrix.append(item)
+                    
+            st.session_state.pro_scanner_df = pd.DataFrame(filtered_matrix)
+            st.success(f"Scan Completed! Found {len(filtered_matrix)} stocks matching all specifications.")
             
     st.markdown("---")
     st.markdown("### 📋 2. Real-Time Result Grid Matrix")
@@ -482,13 +456,7 @@ with tab_execution:
     c2.metric("Investment Amount Required", f"₹{investment_amt:,.2f}")
     c3.metric("Committed Capital Risk (1% of Total)", f"₹{calculated_risk_per_trade:,.2f}")
     
-if st.button("🚀 Execute Trade (Add to Ledger)", disabled=not is_trade_allowed):
-
-    if not validate_trade_entry(
-        user_ledger,
-        stock_name
-    ):
-        st.stop()
+    if st.button("🚀 Execute Trade (Add to Ledger)", disabled=not is_trade_allowed):
         if not is_trade_allowed:
             st.error("Trade entry is strictly locked under risk parameters guidelines.")
         elif per_share_risk <= 0:
