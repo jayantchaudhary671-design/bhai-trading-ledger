@@ -401,16 +401,15 @@ with tab_screener:
             raw_matrix_results = run_pro_bulk_screener(scannable_stocks, n_weeks_ago)
             
             filtered_matrix = []
-            for item in raw_matrix_results:
-               if validate_filters(item, filters):
+for item in raw_matrix_results:
 
-    item["Screener Verification"] = "✅ MATCH APPROVED"
+    if validate_filters(item, filters):
 
-    filtered_matrix.append(item)
-                    item["Screener Verification"] = "✅ MATCH APPROVED"
-                    filtered_matrix.append(item)
-                    
-            st.session_state.pro_scanner_df = pd.DataFrame(filtered_matrix)
+        item["Screener Verification"] = "✅ MATCH APPROVED"
+
+        filtered_matrix.append(item)            
+            
+st.session_state.pro_scanner_df = pd.DataFrame(filtered_matrix)
 st.session_state.pro_scanner_df = process_results_pipeline(
     st.session_state.pro_scanner_df,
     search_text
