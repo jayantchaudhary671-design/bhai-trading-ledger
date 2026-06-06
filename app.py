@@ -80,7 +80,7 @@ def fetch_full_screener_analytics(stock_symbol, n_weeks=1):
         ticker = yf.Ticker(ticker_symbol)
         
         hist = ticker.history(period="2y", interval="1wk")
-       if hist.empty or len(hist) < 20:
+        if hist.empty or len(hist) < 20:
             ticker_symbol = f"{symbol}.BO"
             ticker = yf.Ticker(ticker_symbol)
             hist = ticker.history(period="2y", interval="1wk")
