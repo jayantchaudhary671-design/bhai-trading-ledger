@@ -377,20 +377,24 @@ tab_screener, tab_execution = st.tabs(["📡 1. Live Momentum Screener (Pro Char
 # --- TAB 1: THE DEDICATED PRO SCREENER ---
 with tab_screener:
     st.header("🦅 Custom Real-Time Multi-Query Script Scanner")
-    st.write("Apne rules ke hisab se parameters set kijiye aur Nifty 500 stocks ko instantly scan kijiye:")
-    
+
+    st.write(
+        "Apne rules ke hisab se parameters set kijiye aur Nifty 500 stocks ko instantly scan kijiye:"
+    )
+
     st.markdown("### 🛠️ 1. Configure Scanner Filters")
-  filters = render_v2_filter_panel()
 
-search_text = render_search_box()
+    filters = render_v2_filter_panel()
 
-full_scan, scan_batch_limit = render_scan_options()
+    search_text = render_search_box()
 
-scannable_stocks = get_scan_universe(
-    nifty_500_list,
-    full_scan,
-    scan_batch_limit
-)
+    full_scan, scan_batch_limit = render_scan_options()
+
+    scannable_stocks = get_scan_universe(
+        nifty_500_list,
+        full_scan,
+        scan_batch_limit
+    )
     
     if st.button("🔥 Run Advanced Multi-Filter Scan"):
         with st.spinner("Processing Nifty 500 live candles... System analyzing Chartink queries..."):
