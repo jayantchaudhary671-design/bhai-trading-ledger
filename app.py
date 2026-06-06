@@ -482,12 +482,13 @@ with tab_execution:
     c2.metric("Investment Amount Required", f"₹{investment_amt:,.2f}")
     c3.metric("Committed Capital Risk (1% of Total)", f"₹{calculated_risk_per_trade:,.2f}")
     
-    if st.button("🚀 Execute Trade (Add to Ledger)", disabled=not is_trade_allowed):
-        if not validate_trade_entry(
-    user_ledger,
-    stock_name
-):
-    st.stop()
+if st.button("🚀 Execute Trade (Add to Ledger)", disabled=not is_trade_allowed):
+
+    if not validate_trade_entry(
+        user_ledger,
+        stock_name
+    ):
+        st.stop()
         if not is_trade_allowed:
             st.error("Trade entry is strictly locked under risk parameters guidelines.")
         elif per_share_risk <= 0:
