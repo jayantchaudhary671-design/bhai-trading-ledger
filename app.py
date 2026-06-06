@@ -395,28 +395,42 @@ with tab_screener:
         full_scan,
         scan_batch_limit
     )
-    
-    if st.button("🔥 Run Advanced Multi-Filter Scan"):
-        with st.spinner("Processing Nifty 500 live candles... System analyzing Chartink queries..."):
-            raw_matrix_results = run_pro_bulk_screener(scannable_stocks, n_weeks_ago)
-            
-            filtered_matrix = []
-for item in raw_matrix_results:
 
-    if validate_filters(item, filters):
+if st.button("🔥 Run Advanced Multi-Filter Scan"):
 
-        item["Screener Verification"] = "✅ MATCH APPROVED"
+    with st.spinner(
+        "Processing Nifty 500 live candles... System analyzing Chartink queries..."
+    ):
 
-        filtered_matrix.append(item)            
-            
-st.session_state.pro_scanner_df = pd.DataFrame(filtered_matrix)
-st.session_state.pro_scanner_df = process_results_pipeline(
-    st.session_state.pro_scanner_df,
-    search_text
-)
-st.success
-    (f"Scan Completed! Found {len(filtered_matrix)} stocks matching all specifications."
-)
+        n_weeks_ago = filters.get("historical_weeks", 4)
+
+        raw_matrix_results = run_pro_bulk_screener(
+            scannable_stocks,
+            n_weeks_ago
+        )
+
+        filtered_matrix = []
+
+        for item in raw_matrix_results:
+
+            if validate_filters(item, filters):
+
+                item["Screener Verification"] = "✅ MATCH APPROVED"
+
+                filtered_matrix.append(item)
+
+        st.session_state.pro_scanner_df = pd.DataFrame(
+            filtered_matrix
+        )
+
+        st.session_state.pro_scanner_df = process_results_pipeline(
+            st.session_state.pro_scanner_df,
+            search_text
+        )
+
+        st.success(
+            f"Scan Completed! Found {len(filtered_matrix)} stocks matching all specifications."
+        )
             
     st.markdown("---")
     st.markdown("### 📋 2. Real-Time Result Grid Matrix")
