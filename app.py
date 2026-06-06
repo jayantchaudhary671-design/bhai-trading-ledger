@@ -506,20 +506,26 @@ elif sort_by == "Market Cap Low-High":
         "Market Cap (Cr)",
         ascending=True
     )
-        try:
-            styled_df = df_to_show.style.background_gradient(subset=["Current Weekly RSI", "Market Cap (Cr)"], cmap="YlGn")
-            st.dataframe(styled_df, use_container_width=True)
-            csv = df_to_show.to_csv(index=False)
 
-            st.download_button(
-                "📥 Export CSV",
-                csv,
-                "scanner_results.csv",
-                "text/csv"
-            )
-        except Exception:
-            # Fallback to absolute clean table matrix if layout gradients are un-compiled by cloud server
-            st.dataframe(df_to_show, use_container_width=True)
+try:
+    styled_df = df_to_show.style.background_gradient(
+        subset=["Current Weekly RSI", "Market Cap (Cr)"],
+        cmap="YlGn"
+    )
+
+    st.dataframe(styled_df, use_container_width=True)
+
+    csv = df_to_show.to_csv(index=False)
+
+    st.download_button(
+        "📥 Export CSV",
+        csv,
+        "scanner_results.csv",
+        "text/csv"
+    )
+
+except Exception:
+    st.dataframe(df_to_show, use_container_width=True)
     else:
         st.info("Scanner standby par hai. Multi-query run karne ke liye 'Run Advanced Multi-Filter Scan' dabayein.")
 
